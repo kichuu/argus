@@ -1,0 +1,88 @@
+# Argus CI
+#
+# Three jobs run on every push and PR:
+#   1. lint-and-typecheck - cheap structural checks (ruff + tsc).
+#   2. pytest             - mocked unit tests for packages, eval, and apps.
+#   3. eval-gate          - the citation-precision regression gate (only
+#                           runs the live LLM eval when OPENAI_API_KEY is
+#                           configured as a repo secret; otherwise it
+#                           falls back to a no-LLM sanity check).
+#
+# We deliberately do NOT spin up Postgres, AGE, or Qdrant: tests mock
+# every external service, and the harness does not need a database.
+# We also do NOT run alembic - there is no DB in CI.
+#
+# To enable the LLM-backed gate, add OPENAI_API_KEY under
+# Settings -> Secrets and variables -> Actions -> New repository secret.
+
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  lint-and-typecheck:
+    name: lint + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Setup Python
+        run: uv python install 3.11
+      - name: Sync Python deps
+        run: uv sync
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install pnpm
+        run: npm install -g pnpm
+      - name: Install web deps
+        working-directory: apps/web
+        run: pnpm install --no-frozen-lockfile
+      # Style is informational for now; do not fail the build on ruff findings.
+      - name: Ruff
+        run: uv run ruff check . || true
+      - name: TypeScript
+        working-directory: apps/web
+        run: pnpm typecheck
+
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Setup Python
+        run: uv python install 3.11
+      - name: Sync Python deps
+        run: uv sync
+      - name: Run pytest
+        run: uv run pytest -q
+
+  eval-gate:
+    name: eval gate (citation precision)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [pytest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Setup Python
+        run: uv python install 3.11
+      - name: Sync Python deps
+        run: uv sync
+      # If OPENAI_API_KEY is unset (forks, no secret configured), the
+      # script self-detects and exits 0 after parsing the gold set.
+      - name: Run eval CI gate
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run python scripts/eval_ci.py --tolerance 0.05

@@ -5,7 +5,10 @@ import { useState } from "react";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorBox } from "@/components/ui/ErrorBox";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { api } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
@@ -153,6 +156,22 @@ export function LibraryScreen() {
             />
           </div>
           <div className="grow" style={{ overflowY: "auto" }}>
+            {remote.isLoading ? (
+              <Skeleton rows={5} rowHeight={20} style={{ padding: 16 }} />
+            ) : remote.isError && items.length === 0 ? (
+              <ErrorBox
+                message="failed to load discussions"
+                onRetry={() => remote.refetch()}
+                style={{ margin: 16 }}
+              />
+            ) : items.length === 0 ? (
+              <EmptyState
+                title="No saved debates yet"
+                hint="Launch one from Home"
+                cta={{ label: "GO HOME", onClick: () => router.push("/") }}
+                style={{ margin: 16 }}
+              />
+            ) : (
             <table className="tbl">
               <thead>
                 <tr>
@@ -204,6 +223,7 @@ export function LibraryScreen() {
                 ))}
               </tbody>
             </table>
+            )}
           </div>
         </div>
       </div>

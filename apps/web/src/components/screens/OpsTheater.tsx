@@ -5,9 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorBox } from "@/components/ui/ErrorBox";
 import { Panel } from "@/components/ui/Panel";
 import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { api } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
@@ -395,31 +398,36 @@ export function OpsTheater() {
             </div>
           </Panel>
 
-          {isLive && (
-            <Panel
-              id="R3"
-              title="Live Messages"
-              sub={`stream · ${liveMsgCount} turns`}
-              style={{ flexShrink: 0, maxHeight: 220 }}
-            >
-              <div className="col" style={{ overflowY: "auto", maxHeight: 200 }}>
-                {liveMessages.isLoading && (
-                  <div
-                    style={{ padding: 12, fontSize: 10, color: "var(--ink-3)" }}
-                    className="tt-up"
-                  >
-                    fetching messages...
-                  </div>
-                )}
-                {liveMessages.isError && (
-                  <div
-                    style={{ padding: 12, fontSize: 10, color: "var(--amber)" }}
-                    className="tt-up"
-                  >
-                    api error · falling back to mock
-                  </div>
-                )}
-                {(liveMessages.data ?? []).slice(-12).map((m, i) => (
+          <Panel
+            id="R3"
+            title="Live Messages"
+            sub={isLive ? `stream · ${liveMsgCount} turns` : "no live discussion"}
+            style={{ flexShrink: 0, maxHeight: 220 }}
+          >
+            <div className="col" style={{ overflowY: "auto", maxHeight: 200 }}>
+              {!discussionId ? (
+                <EmptyState
+                  title="No live discussion"
+                  hint="Launch from Home to see agent messages"
+                  cta={{ label: "GO HOME", onClick: () => router.push("/") }}
+                  style={{ margin: 12 }}
+                />
+              ) : liveMessages.isLoading ? (
+                <Skeleton rows={4} rowHeight={12} />
+              ) : liveMessages.isError ? (
+                <ErrorBox
+                  message="failed to load live messages"
+                  onRetry={() => liveMessages.refetch()}
+                  style={{ margin: 12 }}
+                />
+              ) : (liveMessages.data?.length ?? 0) === 0 ? (
+                <EmptyState
+                  title="Waiting for first turn"
+                  hint="Personas are warming up"
+                  style={{ margin: 12 }}
+                />
+              ) : (
+                (liveMessages.data ?? []).slice(-12).map((m, i) => (
                   <div
                     key={(m.id as string | undefined) ?? i}
                     style={{
@@ -441,15 +449,10 @@ export function OpsTheater() {
                       {(m.content ?? "").slice(0, 180)}
                     </div>
                   </div>
-                ))}
-                {!liveMessages.isLoading && (liveMessages.data?.length ?? 0) === 0 && (
-                  <div style={{ padding: 12, fontSize: 10, color: "var(--ink-3)" }}>
-                    waiting for first turn...
-                  </div>
-                )}
-              </div>
-            </Panel>
-          )}
+                ))
+              )}
+            </div>
+          </Panel>
 
           <Panel id="R2" title="Persona Activity" sub="live · thought / tool / speak" style={{ flex: 1 }}>
             <div className="col" style={{ overflowY: "auto" }}>

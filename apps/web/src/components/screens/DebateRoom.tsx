@@ -8,11 +8,14 @@ import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { CiteChip } from "@/components/ui/CiteChip";
 import { Dot } from "@/components/ui/Dot";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorBox } from "@/components/ui/ErrorBox";
 import { Panel } from "@/components/ui/Panel";
 import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { Segmented } from "@/components/ui/Segmented";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { useTypewriter } from "@/hooks/useTypewriter";
 import { api } from "@/lib/api";
 import { ARGUS_DATA, type Persona, type TranscriptMsg } from "@/mock/data";
@@ -369,7 +372,22 @@ export function DebateRoom() {
           </div>
 
           <div ref={transcriptRef} className="grow" style={{ overflowY: "auto", padding: "12px 0" }}>
-            {isLive ? (
+            {discussionId && liveMessages.isLoading ? (
+              <Skeleton rows={5} rowHeight={18} style={{ padding: 16 }} />
+            ) : discussionId && liveMessages.isError ? (
+              <ErrorBox
+                message="failed to load discussion messages"
+                onRetry={() => liveMessages.refetch()}
+                style={{ margin: 16 }}
+              />
+            ) : !discussionId && (liveData?.length ?? 0) === 0 && T.length === 0 ? (
+              <EmptyState
+                title="No debate loaded"
+                hint="Launch a deliberation from Home to populate the transcript"
+                cta={{ label: "GO HOME", onClick: () => router.push("/") }}
+                style={{ margin: 16 }}
+              />
+            ) : isLive ? (
               <>
                 {(liveData ?? []).map((m, i) => {
                   const personaId = m.persona_id ?? m.agent_id ?? "";

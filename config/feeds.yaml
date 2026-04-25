@@ -1,0 +1,76 @@
+# Argus geopolitics feed roster.
+#
+# Curated list of free-tier RSS feeds grouped by trust tier. The
+# `scripts/ingest_roster.py` CLI reads this file and routes each feed
+# through the existing `fetch_source` activity.
+#
+# Editing rules:
+#   - Add a feed under the appropriate group; keep the file lexically
+#     simple (name + url, plus optional `disabled` / `note`).
+#   - To temporarily turn off a feed, set `disabled: true` and add a
+#     `note:` so the next maintainer knows why.
+#   - Feeds inherit `trust_tier` from their group; per-feed overrides are
+#     intentionally not supported here — adjust the group instead.
+#
+# `last_reviewed` should be updated whenever the roster is audited.
+
+vertical: geopolitics
+last_reviewed: 2026-04-25
+
+groups:
+  - name: governments_and_igos
+    description: Official press releases — high trust, narrow but authoritative
+    trust_tier: 1
+    feeds:
+      - name: US State Department
+        url: https://www.state.gov/feed
+      - name: White House
+        url: https://www.whitehouse.gov/feed/
+        disabled: true
+        note: "HEAD/GET both return 404 as of 2026-04-25; whitehouse.gov RSS endpoint may have moved. Re-enable once a working URL is confirmed."
+      - name: UN News
+        url: https://news.un.org/feed/subscribe/en/news/all/rss.xml
+      - name: IAEA News
+        url: https://www.iaea.org/news/feed
+        disabled: true
+        note: "Probe returned 403 (likely bot-blocked) on 2026-04-25; needs a header-tolerant fetcher or alternate URL."
+      - name: NATO HQ News
+        url: https://www.nato.int/cps/en/natohq/rss.xml
+        disabled: true
+        note: "HEAD/GET return 404 on 2026-04-25; NATO's CPS feed path likely changed. Re-enable when verified."
+      - name: Council of the EU press
+        url: https://www.consilium.europa.eu/en/press/press-releases/feed/
+        disabled: true
+        note: "Probe returned 403 on 2026-04-25 (Akamai/WAF block). Consider switching to ec.europa.eu press releases or using a dedicated UA."
+
+  - name: wire_services
+    description: Major wire services — broad, fast
+    trust_tier: 2
+    feeds:
+      - name: BBC World
+        url: https://feeds.bbci.co.uk/news/world/rss.xml
+      - name: Al Jazeera English
+        url: https://www.aljazeera.com/xml/rss/all.xml
+      - name: Deutsche Welle (English)
+        url: https://rss.dw.com/rdf/rss-en-all
+      - name: France 24 English
+        url: https://www.france24.com/en/rss
+      - name: The Guardian World
+        url: https://www.theguardian.com/world/rss
+
+  - name: analysis_and_thinktanks
+    description: Slower deeper analysis — lower freshness but richer context
+    trust_tier: 2
+    feeds:
+      - name: Foreign Policy
+        url: https://foreignpolicy.com/feed/
+      - name: The Diplomat
+        url: https://thediplomat.com/feed/
+      - name: Lawfare
+        url: https://www.lawfaremedia.org/articles?format=feed
+        disabled: true
+        note: "Probe returned 403 on 2026-04-25 (likely Cloudflare bot challenge). May work from a less-flagged egress; keep entry for re-enable."
+
+defaults:
+  max_items_per_feed: 5
+  retry_attempts: 2

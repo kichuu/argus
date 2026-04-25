@@ -1,18 +1,23 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorBox } from "@/components/ui/ErrorBox";
 import { KV } from "@/components/ui/KV";
 import { Panel } from "@/components/ui/Panel";
 import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { api } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
 
 export function SynthesisView() {
+  const router = useRouter();
   const D = ARGUS_DATA;
   const S = D.SYNTHESIS;
   const pById = (id: string) => D.PERSONAS.find((p) => p.id === id);
@@ -182,7 +187,22 @@ export function SynthesisView() {
                   : `${S.evidence} citations · 9 sources · 14 KG nodes`
               }
             >
-              {isLive ? (
+              {!discussionId ? (
+                <EmptyState
+                  title="No discussion selected"
+                  hint="Open a debate from Library or launch one from Home to see its evidence trail"
+                  cta={{ label: "GO HOME", onClick: () => router.push("/") }}
+                  style={{ margin: 16 }}
+                />
+              ) : liveClaims.isLoading ? (
+                <Skeleton rows={6} rowHeight={14} style={{ padding: 16 }} />
+              ) : liveClaims.isError ? (
+                <ErrorBox
+                  message="failed to load claim ledger"
+                  onRetry={() => liveClaims.refetch()}
+                  style={{ margin: 16 }}
+                />
+              ) : isLive ? (
                 <div style={{ padding: 16, fontSize: 11, lineHeight: 1.7 }}>
                   <div className="t-mono" style={{ color: "var(--ink-1)" }}>
                     {claims.map((c, i) => (

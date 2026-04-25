@@ -5,9 +5,11 @@ import { useState } from "react";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { Dot } from "@/components/ui/Dot";
+import { ErrorBox } from "@/components/ui/ErrorBox";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Segmented } from "@/components/ui/Segmented";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { api } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
@@ -75,13 +77,26 @@ export function HomeScreen() {
         breadcrumb="// convene a council"
         right={
           <div className="row gap-2" style={{ alignItems: "center" }}>
-            <Dot tone={apiOnline ? "green" : "amber"} pulse={!apiOnline} />
-            <span className="tt-up muted" style={{ fontSize: 9 }}>
-              {freshnessLabel}
-            </span>
+            {health.isLoading ? (
+              <Skeleton rows={1} rowHeight={10} style={{ padding: 0, width: 140 }} />
+            ) : (
+              <>
+                <Dot tone={apiOnline ? "green" : "amber"} pulse={!apiOnline} />
+                <span className="tt-up muted" style={{ fontSize: 9 }}>
+                  {freshnessLabel}
+                </span>
+              </>
+            )}
           </div>
         }
       />
+
+      {health.isError && (
+        <ErrorBox
+          message="api health check failed · running on mock data"
+          onRetry={() => health.refetch()}
+        />
+      )}
 
       <div className="row gap-4" style={{ flexShrink: 0 }}>
         <Panel

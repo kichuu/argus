@@ -330,6 +330,16 @@ body {
 }
 .blink { animation: blink 1s steps(1) infinite; }
 
+@keyframes argus-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.argus-skeleton-bar {
+  background: linear-gradient(90deg, var(--bg-2) 0%, var(--bg-3) 50%, var(--bg-2) 100%);
+  background-size: 200% 100%;
+  animation: argus-shimmer 1.6s linear infinite;
+}
+
 .caret::after {
   content: "▍";
   margin-left: 2px;

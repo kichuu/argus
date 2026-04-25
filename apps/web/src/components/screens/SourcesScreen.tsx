@@ -5,9 +5,11 @@ import { AddSourceModal } from "@/components/ui/AddSourceModal";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { Dot } from "@/components/ui/Dot";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { KV } from "@/components/ui/KV";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { api, type SourceIngestResponse } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
@@ -92,6 +94,15 @@ export function SourcesScreen() {
               </Btn>
             </div>
           )}
+          {remote.isLoading ? (
+            <Skeleton rows={6} rowHeight={64} gap={10} style={{ padding: 0 }} />
+          ) : (sources ?? ARGUS_DATA.SOURCES).length === 0 ? (
+            <EmptyState
+              title="No sources ingested yet"
+              hint="Click + INGEST URL above to add a source"
+              cta={{ label: "+ INGEST URL", onClick: () => setModalOpen(true) }}
+            />
+          ) : (
           <div
             style={{
               display: "grid",
@@ -156,6 +167,7 @@ export function SourcesScreen() {
               );
             })}
           </div>
+          )}
         </div>
         <div
           style={{
