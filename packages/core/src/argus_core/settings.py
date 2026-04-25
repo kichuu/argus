@@ -63,6 +63,7 @@ class Settings(BaseSettings):
 
     gold_set_path: Path = Path("./eval/gold.jsonl")
     trust_tiers_path: Path = Path("./config/trust_tiers.yaml")
+    personas_path: Path = Path("./config/personas.yaml")
 
     newsapi_key: str = ""
     gnews_key: str = ""

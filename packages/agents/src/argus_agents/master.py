@@ -1,4 +1,5 @@
 from argus_core.logging import get_logger
+from argus_core.personas import PersonaLibrary, load_persona_library
 from argus_core.schemas import AgentRole, Persona
 from argus_core.settings import get_settings
 from argus_extraction.providers import Provider
@@ -8,6 +9,8 @@ from argus_agents.base import Agent
 from argus_agents.state import DiscussionState
 
 logger = get_logger(__name__)
+
+_DEFAULT_LIBRARY_PERSONA_COUNT = 4
 
 
 class _PersonaProposal(BaseModel):
@@ -34,11 +37,43 @@ and 2-5 knowledge_emphasis tags. Do not write phrases like "you are X" or "act a
 
 
 class MasterAgent(Agent):
-    def __init__(self, provider: Provider, model: str | None = None) -> None:
+    def __init__(
+        self,
+        provider: Provider,
+        model: str | None = None,
+        *,
+        library: PersonaLibrary | None = None,
+        library_persona_count: int = _DEFAULT_LIBRARY_PERSONA_COUNT,
+    ) -> None:
         super().__init__(AgentRole.MASTER, model or get_settings().default_master_model)
         self.provider = provider
+        self.library = library if library is not None else load_persona_library()
+        self.library_persona_count = library_persona_count
 
     async def step(self, state: DiscussionState) -> DiscussionState:
+        vertical = state.evidence_pack.vertical
+        if vertical and self._library_has_vertical(vertical):
+            personas = self._personas_from_library(vertical)
+            if personas:
+                state.personas = personas
+                logger.info(
+                    "master_personas_from_library",
+                    count=len(personas),
+                    vertical=vertical,
+                )
+                return state
+
+        return await self._invent_personas(state)
+
+    def _library_has_vertical(self, vertical: str) -> bool:
+        return bool(self.library.verticals.get(vertical))
+
+    def _personas_from_library(self, vertical: str) -> list[Persona]:
+        templates = self.library.for_vertical(vertical, include_general=False)
+        chosen = templates[: self.library_persona_count]
+        return self.library.to_personas(chosen)
+
+    async def _invent_personas(self, state: DiscussionState) -> DiscussionState:
         evidence_block = "\n".join(
             f"- [ev:{e.source_id}] {e.verbatim_span!r}"
             for e in state.evidence_pack.evidence[:32]

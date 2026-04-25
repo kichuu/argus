@@ -62,47 +62,115 @@ tiers:
       - facebook.com
 
 domain_overrides:
-  reuters.com: 1
-  apnews.com: 1
-  sec.gov: 1
-  congress.gov: 1
+  # ---------------------------------------------------------------------------
+  # Tier 1: primary / official — government, IGO, peer-reviewed, statistical
+  # ---------------------------------------------------------------------------
+  bankofengland.co.uk: 1
+  bea.gov: 1
+  bis.org: 1
+  bjs.ojp.gov: 1
   bls.gov: 1
-  noaa.gov: 1
-  ipcc.ch: 1
-  who.int: 1
-  ec.europa.eu: 1
-  federalreserve.gov: 1
-  imf.org: 1
-  worldbank.org: 1
-  un.org: 1
-  eia.gov: 1
+  cbo.gov: 1
   cdc.gov: 1
-  nasa.gov: 1
-  treasury.gov: 1
-  state.gov: 1
+  congress.gov: 1
+  ec.europa.eu: 1
+  ecb.europa.eu: 1
+  eia.gov: 1
   europa.eu: 1
-  ft.com: 2
-  wsj.com: 2
-  nytimes.com: 2
+  eurostat.ec.europa.eu: 1
+  fbi.gov: 1
+  federalreserve.gov: 1
+  fdic.gov: 1
+  iea.org: 1
+  imf.org: 1
+  ipcc.ch: 1
+  jstor.org: 1
+  nasa.gov: 1
+  nejm.org: 1
+  noaa.gov: 1
+  nature.com: 1
+  oecd.org: 1
+  ons.gov.uk: 1
+  pnas.org: 1
+  science.org: 1
+  sec.gov: 1
+  state.gov: 1
+  supremecourt.gov: 1
+  thelancet.com: 1
+  treasury.gov: 1
+  un.org: 1
+  unhcr.org: 1
+  uscourts.gov: 1
+  who.int: 1
+  worldbank.org: 1
+  wto.org: 1
+
+  # ---------------------------------------------------------------------------
+  # Tier 2: established mainstream — major wires and outlets w/ strong editorial
+  # ---------------------------------------------------------------------------
+  apnews.com: 2
+  bbc.co.uk: 2
   bbc.com: 2
   bloomberg.com: 2
-  theguardian.com: 2
+  cbsnews.com: 2
+  dw.com: 2
   economist.com: 2
-  washingtonpost.com: 2
+  ft.com: 2
+  japantimes.co.jp: 2
+  latimes.com: 2
+  lemonde.fr: 2
+  nbcnews.com: 2
+  nikkei.com: 2
   npr.org: 2
-  nature.com: 2
-  science.org: 2
-  politico.com: 3
-  axios.com: 3
-  propublica.org: 3
+  nytimes.com: 2
+  reuters.com: 2
+  spiegel.de: 2
+  theatlantic.com: 2
+  theguardian.com: 2
+  thetimes.co.uk: 2
+  washingtonpost.com: 2
+  wsj.com: 2
+
+  # ---------------------------------------------------------------------------
+  # Tier 3: regional / specialist / vetted analysis
+  # ---------------------------------------------------------------------------
   arstechnica.com: 3
-  thehill.com: 3
-  foreignpolicy.com: 3
-  lawfaremedia.org: 3
+  axios.com: 3
   carbonbrief.org: 3
-  medium.com: 4
-  substack.com: 4
-  reddit.com: 4
-  twitter.com: 4
-  x.com: 4
+  cnbc.com: 3
+  defenseone.com: 3
+  factcheck.org: 3
+  foreignaffairs.com: 3
+  foreignpolicy.com: 3
+  inside-climatenews.org: 3
+  lawfareblog.com: 3
+  lawfaremedia.org: 3
+  marketwatch.com: 3
+  politico.com: 3
+  politifact.com: 3
+  propublica.org: 3
+  scientificamerican.com: 3
+  scotusblog.com: 3
+  semafor.com: 3
+  snopes.com: 3
+  statnews.com: 3
+  technologyreview.com: 3
+  thehill.com: 3
+  theverge.com: 3
+
+  # ---------------------------------------------------------------------------
+  # Tier 4: unvetted / aggregators / social
+  # ---------------------------------------------------------------------------
+  blogspot.com: 4
   facebook.com: 4
+  linkedin.com: 4
+  medium.com: 4
+  quora.com: 4
+  reddit.com: 4
+  substack.com: 4
+  tiktok.com: 4
+  tumblr.com: 4
+  twitter.com: 4
+  wordpress.com: 4
+  x.com: 4
+  youtube.com: 4

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class EvidencePack(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     topic: str
+    vertical: str | None = None
     evidence: list[EvidenceRef] = Field(default_factory=list)
     entities: list[UUID] = Field(default_factory=list)
 
