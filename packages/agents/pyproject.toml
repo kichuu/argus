@@ -1,14 +1,12 @@
 [project]
 name = "argus-agents"
 version = "0.1.0"
-description = "Argus agents: research, master, persona, critic, synthesizer on LangGraph"
+description = "Argus agents: research, master, persona, critic, synthesizer on a flat asyncio orchestrator"
 requires-python = ">=3.12"
 dependencies = [
     "argus-core",
     "argus-extraction",
     "argus-retrieval",
-    "langgraph>=0.2.60",
-    "langgraph-checkpoint>=2.0",
     "pydantic>=2.9",
 ]
 

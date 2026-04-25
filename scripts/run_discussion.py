@@ -18,8 +18,9 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from argus_agents import DiscussionGraph
+from argus_agents import CouncilOrchestrator
 from argus_core.logging import configure_logging, get_logger
+from argus_core.personas import load_persona_library
 from argus_core.settings import get_settings
 
 from scripts._mock_provider import (
@@ -69,26 +70,18 @@ def _gold_path() -> Path:
     return (repo_root / candidate).resolve()
 
 
-def _build_graph_mock(vertical: str) -> DiscussionGraph:
-    settings = get_settings()
+def _build_orch_mock(vertical: str) -> CouncilOrchestrator:
     retriever = LocalGoldRetriever(_gold_path(), vertical)
     provider: Provider = MockProvider()
-    return DiscussionGraph(
+    return CouncilOrchestrator(
+        provider=provider,
         retriever=retriever,
-        master_provider=provider,
-        persona_provider=provider,
-        critic_provider=provider,
-        synth_provider=provider,
-        research_model=settings.default_research_model,
-        master_model=settings.default_master_model,
-        persona_model=settings.default_persona_model,
-        critic_model=settings.default_critic_model,
-        synth_model=settings.default_synthesis_model,
+        library=load_persona_library(),
         extractor_family="gpt",
     )
 
 
-def _build_graph_live(vertical: str) -> DiscussionGraph:
+def _build_orch_live(vertical: str) -> CouncilOrchestrator:
     from argus_extraction.providers import OpenAIProvider, family_of
 
     settings = get_settings()
@@ -96,17 +89,10 @@ def _build_graph_live(vertical: str) -> DiscussionGraph:
         raise SystemExit("--live requested but OPENAI_API_KEY is not set")
     retriever = LocalGoldRetriever(_gold_path(), vertical)
     provider = OpenAIProvider()
-    return DiscussionGraph(
+    return CouncilOrchestrator(
+        provider=provider,
         retriever=retriever,
-        master_provider=provider,
-        persona_provider=provider,
-        critic_provider=provider,
-        synth_provider=provider,
-        research_model=settings.default_research_model,
-        master_model=settings.default_master_model,
-        persona_model=settings.default_persona_model,
-        critic_model=settings.default_critic_model,
-        synth_model=settings.default_synthesis_model,
+        library=load_persona_library(),
         extractor_family=family_of(settings.default_extractor_model),
     )
 
@@ -157,13 +143,13 @@ async def _run(args: argparse.Namespace) -> int:
         personas=args.personas,
     )
 
-    graph = (
-        _build_graph_mock(args.vertical)
+    orch = (
+        _build_orch_mock(args.vertical)
         if mode == "mock"
-        else _build_graph_live(args.vertical)
+        else _build_orch_live(args.vertical)
     )
 
-    state = await graph.run(args.topic)
+    state = await orch.run(args.topic, vertical=args.vertical, num_personas=args.personas)
     _print_summary(state, mode)
     if args.output is not None:
         _write_output(state, args.output)

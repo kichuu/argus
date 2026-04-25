@@ -7,6 +7,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from argus_workers.activities.discussion import (
+    _mark_failed,
     assemble_evidence_pack,
     persist_results,
     run_discussion_graph,
@@ -50,6 +51,7 @@ async def run_worker() -> None:
             assemble_evidence_pack,
             run_discussion_graph,
             persist_results,
+            _mark_failed,
         ],
     )
 
