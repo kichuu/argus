@@ -4,9 +4,11 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
+import { Chip } from "@/components/ui/Chip";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { api } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
+import { useDebateStore } from "@/store/debate";
 
 const COLLECTIONS = [
   { n: "★ Starred", c: 4 },
@@ -26,24 +28,57 @@ const EXTRA_ITEMS = [
   { id: "d-2026-04-10-01", title: "Ukraine peace deal: territorial freeze scenarios", time: "15d", personas: 6, status: "done" as const },
 ];
 
+type LibItem = {
+  id: string;
+  title: string;
+  time: string;
+  personas: number;
+  status: "running" | "done";
+};
+
+function relTime(iso?: string): string {
+  if (!iso) return "—";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "—";
+  const dMs = Date.now() - t;
+  const m = Math.max(0, Math.floor(dMs / 60000));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
 export function LibraryScreen() {
   const router = useRouter();
+  const setDiscussionId = useDebateStore((s) => s.setDiscussionId);
+  const setTopic = useDebateStore((s) => s.setTopic);
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState("All debates");
 
   const remote = useQuery({
     queryKey: ["discussions"],
-    queryFn: () => api.health(), // placeholder until /discussions list endpoint exists
+    queryFn: api.discussions,
     retry: 0,
     staleTime: 30_000,
   });
 
-  const items = [...ARGUS_DATA.RECENT, ...EXTRA_ITEMS];
+  const remoteItems: LibItem[] =
+    remote.data?.map((d) => ({
+      id: d.id,
+      title: d.topic ?? d.id,
+      time: relTime(d.started_at ?? d.created_at ?? d.completed_at),
+      personas: 0,
+      status: (d.status === "running" ? "running" : "done") as "running" | "done",
+    })) ?? [];
+
+  const apiOnline = remote.isSuccess && remoteItems.length > 0;
+  const items: LibItem[] = apiOnline
+    ? remoteItems
+    : ([...ARGUS_DATA.RECENT, ...EXTRA_ITEMS] as LibItem[]);
+
   const filtered = q
     ? items.filter((i) => i.title.toLowerCase().includes(q.toLowerCase()))
     : items;
-
-  const apiOnline = remote.isSuccess;
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
@@ -52,7 +87,9 @@ export function LibraryScreen() {
         title="Synthesis Library"
         breadcrumb={`// ${items.length} archived · ${COLLECTIONS.length + 1} collections · ${apiOnline ? "api online" : "api offline · using mock"}`}
         right={
-          <div className="row gap-2">
+          <div className="row gap-2" style={{ alignItems: "center" }}>
+            {!apiOnline && <Chip tone="amber">offline · mock</Chip>}
+            {apiOnline && <Chip tone="green">live · {items.length}</Chip>}
             <Btn ghost>+ COLLECTION</Btn>
             <Btn ghost>↗ BULK EXPORT</Btn>
             <Btn ghost>◫ DIFF TWO</Btn>
@@ -132,7 +169,16 @@ export function LibraryScreen() {
                 {filtered.map((d, i) => (
                   <tr
                     key={d.id}
-                    onClick={() => router.push(d.status === "running" ? "/debate" : "/synthesis")}
+                    onClick={() => {
+                      // only set live id when it came from the backend
+                      if (apiOnline) {
+                        setDiscussionId(d.id);
+                        setTopic(d.title);
+                      } else {
+                        setDiscussionId(null);
+                      }
+                      router.push(d.status === "running" ? "/ops" : "/synthesis");
+                    }}
                     style={{ cursor: "pointer" }}
                   >
                     <td>{i % 5 === 2 ? "★" : ""}</td>

@@ -240,6 +240,8 @@ export function DebateRoom() {
         breadcrumb={`// d-2026-04-25-01 · "Will the PRC escalate to a customs quarantine of Taiwanese ports within 12 months?"`}
         right={
           <div className="row gap-2">
+            {showMockChip && <Chip tone="amber">offline · mock</Chip>}
+            {isLive && <Chip tone="green">live · {liveData?.length ?? 0} msgs</Chip>}
             <Chip tone="amber">
               <Dot tone="amber" pulse /> ROUND {roundN} · {round}
             </Chip>
@@ -367,42 +369,114 @@ export function DebateRoom() {
           </div>
 
           <div ref={transcriptRef} className="grow" style={{ overflowY: "auto", padding: "12px 0" }}>
-            {searched.map((m, i) => {
-              const p = pById(m.persona);
-              if (!p) return null;
-              const isLast = i === searched.length - 1 && idx <= T.length;
-              const showStream = isLast && !paused;
-              return (
-                <Message
-                  key={`${m.persona}-${i}-${m.t}`}
-                  m={m}
-                  p={p}
-                  stream={showStream}
-                  pById={pById}
-                />
-              );
-            })}
-            {!paused && idx < T.length && (
-              <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
-                <AsciiSpinner /> awaiting next turn...
-              </div>
-            )}
-            {idx >= T.length && (
-              <div
-                style={{
-                  padding: 24,
-                  textAlign: "center",
-                  color: "var(--ink-2)",
-                  fontSize: 11,
-                }}
-              >
-                ─── debate concluded · synthesizer engaged ───
-                <div style={{ marginTop: 12 }}>
-                  <Btn primary onClick={() => router.push("/synthesis")}>
-                    VIEW SYNTHESIS →
-                  </Btn>
-                </div>
-              </div>
+            {isLive ? (
+              <>
+                {(liveData ?? []).map((m, i) => {
+                  const personaId = m.persona_id ?? m.agent_id ?? "";
+                  const p = pById(personaId);
+                  return (
+                    <div
+                      key={(m.id as string | undefined) ?? i}
+                      style={{
+                        padding: "12px 16px",
+                        borderBottom: "1px solid var(--line-1)",
+                      }}
+                    >
+                      <div className="row gap-3" style={{ alignItems: "flex-start" }}>
+                        {p && <PersonaAvatar p={p} size={28} />}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            className="row gap-2"
+                            style={{ alignItems: "baseline", flexWrap: "wrap" }}
+                          >
+                            <span
+                              style={{
+                                color: p?.colorVar ?? "var(--ink-0)",
+                                fontWeight: 600,
+                                fontSize: 12,
+                              }}
+                            >
+                              {p?.name ?? personaId ?? m.role ?? "agent"}
+                            </span>
+                            {m.role && (
+                              <span className="tt-up muted" style={{ fontSize: 9 }}>
+                                {m.role}
+                              </span>
+                            )}
+                            <div style={{ flex: 1 }} />
+                            <span className="tab muted" style={{ fontSize: 9 }}>
+                              {m.created_at?.slice(11, 19) ?? ""}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: "var(--ink-0)",
+                              marginTop: 6,
+                              lineHeight: 1.55,
+                              fontFamily:
+                                "'IBM Plex Sans', 'Inter', system-ui, sans-serif",
+                            }}
+                          >
+                            {m.content ?? ""}
+                          </div>
+                          {Array.isArray(m.evidence_refs) && m.evidence_refs.length > 0 && (
+                            <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
+                              · {m.evidence_refs.length} evidence ref
+                              {m.evidence_refs.length === 1 ? "" : "s"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {liveMessages.isFetching && (
+                  <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
+                    <AsciiSpinner /> polling...
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {searched.map((m, i) => {
+                  const p = pById(m.persona);
+                  if (!p) return null;
+                  const isLast = i === searched.length - 1 && idx <= T.length;
+                  const showStream = isLast && !paused;
+                  return (
+                    <Message
+                      key={`${m.persona}-${i}-${m.t}`}
+                      m={m}
+                      p={p}
+                      stream={showStream}
+                      pById={pById}
+                    />
+                  );
+                })}
+                {!paused && idx < T.length && (
+                  <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
+                    <AsciiSpinner /> awaiting next turn...
+                  </div>
+                )}
+                {idx >= T.length && (
+                  <div
+                    style={{
+                      padding: 24,
+                      textAlign: "center",
+                      color: "var(--ink-2)",
+                      fontSize: 11,
+                    }}
+                  >
+                    ─── debate concluded · synthesizer engaged ───
+                    <div style={{ marginTop: 12 }}>
+                      <Btn primary onClick={() => router.push("/synthesis")}>
+                        VIEW SYNTHESIS →
+                      </Btn>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 

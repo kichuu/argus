@@ -1,4 +1,5 @@
 "use client";
+import { useQuery } from "@tanstack/react-query";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
@@ -7,21 +8,42 @@ import { Panel } from "@/components/ui/Panel";
 import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { api } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
+import { useDebateStore } from "@/store/debate";
 
 export function SynthesisView() {
   const D = ARGUS_DATA;
   const S = D.SYNTHESIS;
   const pById = (id: string) => D.PERSONAS.find((p) => p.id === id);
+  const discussionId = useDebateStore((s) => s.discussionId);
+
+  const liveClaims = useQuery({
+    queryKey: ["discussion-claims", discussionId],
+    queryFn: () => api.discussionClaims(discussionId as string),
+    enabled: !!discussionId,
+    retry: 0,
+    staleTime: 30_000,
+  });
+
+  const claims = liveClaims.data ?? [];
+  const isLive = !!discussionId && claims.length > 0;
+  const showMockChip = !discussionId || liveClaims.isError || claims.length === 0;
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
         code="07·SYNTH"
         title="Synthesis"
-        breadcrumb={`// d-2026-04-25-01 · 7 personas · 13 turns · 1m 42s · ${S.evidence} citations`}
+        breadcrumb={
+          isLive
+            ? `// ${discussionId} · ${claims.length} claims (live)`
+            : `// d-2026-04-25-01 · 7 personas · 13 turns · 1m 42s · ${S.evidence} citations`
+        }
         right={
-          <div className="row gap-2">
+          <div className="row gap-2" style={{ alignItems: "center" }}>
+            {showMockChip && <Chip tone="amber">offline · mock</Chip>}
+            {isLive && <Chip tone="green">live · {claims.length} claims</Chip>}
             <Btn ghost>↺ RE-RUN</Btn>
             <Btn ghost>⌥ COUNTERFACTUAL</Btn>
             <Btn ghost>↗ EXPORT</Btn>
@@ -154,8 +176,42 @@ export function SynthesisView() {
             <Panel
               id="E"
               title="Evidence Trail"
-              sub={`${S.evidence} citations · 9 sources · 14 KG nodes`}
+              sub={
+                isLive
+                  ? `${claims.length} claims · live`
+                  : `${S.evidence} citations · 9 sources · 14 KG nodes`
+              }
             >
+              {isLive ? (
+                <div style={{ padding: 16, fontSize: 11, lineHeight: 1.7 }}>
+                  <div className="t-mono" style={{ color: "var(--ink-1)" }}>
+                    {claims.map((c, i) => (
+                      <div key={c.id ?? i}>
+                        <span className="amber">
+                          claim {String(i + 1).padStart(2, "0")}
+                        </span>{" "}
+                        &quot;
+                        {c.text ??
+                          [c.subject, c.predicate, c.object].filter(Boolean).join(" ") ??
+                          c.id}
+                        &quot;
+                        {typeof c.confidence === "number" && (
+                          <span className="muted">
+                            {" "}
+                            · conf {c.confidence.toFixed(2)}
+                          </span>
+                        )}
+                        {c.source_id && (
+                          <>
+                            {" "}
+                            → <span className="green">{c.source_id}</span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
               <div style={{ padding: 16, fontSize: 11, lineHeight: 1.7 }}>
                 <div className="t-mono" style={{ color: "var(--ink-1)" }}>
                   <div>
@@ -195,6 +251,7 @@ export function SynthesisView() {
                   <div className="muted">... 10 more claims, fully cited ...</div>
                 </div>
               </div>
+              )}
             </Panel>
 
             <Panel id="O" title="Open Questions" sub="unresolved · synthesizer-flagged">
