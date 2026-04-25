@@ -27,24 +27,42 @@ async def _load_discussion(session: AsyncSession, discussion_id: str) -> Discuss
 
 
 def _build_retriever() -> Any:
-    """Construct the default HybridRetriever from configured deps.
+    """Construct a ResearchLoop wrapping HybridRetriever + OpenAI web_search.
 
-    Imported lazily so unit tests can patch `argus_retrieval` symbols and so
-    the activity import path doesn't pull heavy ML deps at module load.
+    Local Qdrant is queried first; if hits < min_local_hits the loop falls
+    back to OpenAI's hosted web_search, fetches each result via httpx,
+    funnels through the ingestion pipeline (hash, dedup, persist Source,
+    embed, upsert to Qdrant), then re-queries. Web hits inherit the same
+    span-verification / trust-tier discipline as RSS sources.
+
+    Imported lazily so unit tests can patch and so the activity import
+    path doesn't pull heavy ML deps at module load.
     """
     from argus_retrieval import (
         Embedder,
         HybridRetriever,
+        OpenAISearchTool,
+        ResearchLoop,
         VectorIndex,
         get_reranker,
     )
     from argus_retrieval.graph import GraphQuerier
 
-    return HybridRetriever(
-        vector_index=VectorIndex(),
+    embedder = Embedder()
+    vector_index = VectorIndex()
+    local = HybridRetriever(
+        vector_index=vector_index,
         graph=GraphQuerier(),
         reranker=get_reranker(),
-        embedder=Embedder(),
+        embedder=embedder,
+    )
+    web_search = OpenAISearchTool() if get_settings().openai_api_key else None
+    return ResearchLoop(
+        local_retriever=local,
+        embedder=embedder,
+        vector_index=vector_index,
+        web_search=web_search,
+        min_local_hits=5,
     )
 
 

@@ -24,12 +24,29 @@ class _ClaimSlate(BaseModel):
     claims: list[_ProposedClaim] = Field(default_factory=list)
 
 
-_SYNTH_PROMPT = """You synthesize the discussion into atomic Claims.
-Output ONLY JSON. Each claim:
-- statement: a single, verifiable atomic sentence (no prose).
+_SYNTH_PROMPT = """You synthesize the discussion into Claims that answer the user's TOPIC.
+
+OUTPUT FORMAT — strict JSON. Each claim:
+- statement: a single, verifiable, declarative sentence (no prose, no questions).
 - supporting_evidence_ids: list of evidence UUIDs from the pack that back it.
-- contradicting_evidence_ids: list of evidence UUIDs from the pack that contradict it.
+- contradicting_evidence_ids: list of evidence UUIDs that contradict it.
 - agree / disagree / uncertain: counts across persona messages.
+
+THE FIRST CLAIM in your list MUST be the **topic answer** — a direct,
+declarative response to the topic, framed in plain language.
+- If the topic is a yes/no question ("Will X happen?"), the first claim
+  should answer Yes / No / Unlikely / Likely with a brief reason.
+- If the topic is a factual question ("What did X decide?"), the first
+  claim should state the answer.
+- Even when evidence is thin, attempt the answer and let the confidence
+  reflect uncertainty. DO NOT make the first claim a meta-statement like
+  "the evidence is insufficient" — that's a cop-out. Instead, give the
+  best answer the evidence permits and mark agree/disagree/uncertain
+  honestly. The synthesizer caps confidence when supporting evidence
+  has critic hits, so an honest low-confidence direct answer is fine.
+
+After the topic answer, emit 2-5 supporting / contextual claims that
+substantiate (or qualify) the answer using evidence from the pack.
 
 Topic: {topic}
 

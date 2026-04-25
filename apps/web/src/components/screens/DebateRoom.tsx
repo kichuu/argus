@@ -785,9 +785,12 @@ function VerdictCard({ topic, claims }: { topic: string; claims: Claim[] }) {
   totalEvidence = seenEv.size;
   const avgConf = claims.length > 0 ? totalConf / claims.length : 0;
 
-  // Headline: prefer highest-confidence likely_true; else highest-confidence overall.
+  // Headline: synthesizer is prompted to put the topic answer FIRST. Use
+  // claim[0] when present; fall back to highest-confidence likely_true; then
+  // highest-confidence overall.
   const sorted = [...claims].sort((a, b) => b.confidence - a.confidence);
-  const headline = sorted.find((c) => c.status === "likely_true") ?? sorted[0];
+  const headline =
+    claims[0] ?? sorted.find((c) => c.status === "likely_true") ?? sorted[0];
 
   // If every claim sits at exactly 0.5, the synthesizer hit the critic-cap.
   const allCapped =
