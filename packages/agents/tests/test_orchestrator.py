@@ -53,7 +53,11 @@ def _library() -> PersonaLibrary:
 class _MockProvider:
     name = "openai"
 
-    def __init__(self, *, persona_text: str = "Statement [ev:{eid}].") -> None:
+    def __init__(
+        self,
+        *,
+        persona_text: str = "The cited evidence shows the claim holds true [ev:{eid}].",
+    ) -> None:
         self.persona_text = persona_text
         self.calls: list[Any] = []
 

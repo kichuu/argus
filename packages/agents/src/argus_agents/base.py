@@ -31,10 +31,20 @@ class Agent(ABC):
     async def step(self, state: DiscussionState) -> DiscussionState: ...
 
 
+_MIN_NARRATIVE_WORDS = 4
+
+
 def strip_unsupported_claims(
     content: str,
     allowed_evidence_ids: set[UUID],
 ) -> tuple[str, list[str]]:
+    """Drop sentences that are unsupported, unrecognised-id-citing, or
+    pure-citation chains with no narrative.
+
+    A 'pure citation' sentence has fewer than _MIN_NARRATIVE_WORDS words
+    once all [ev:...] markers are removed — those are LLM laziness, not
+    evidence-backed assertions, and they pollute the synthesis pipeline.
+    """
     sentences = _SENTENCE_SPLIT.split(content.strip())
     kept: list[str] = []
     stripped: list[str] = []
@@ -49,6 +59,10 @@ def strip_unsupported_claims(
             stripped.append(sentence)
             continue
         if any(found.lower() not in allowed_str for found in ids):
+            stripped.append(sentence)
+            continue
+        narrative = _EV_PATTERN.sub("", sentence).strip()
+        if len(narrative.split()) < _MIN_NARRATIVE_WORDS:
             stripped.append(sentence)
             continue
         kept.append(sentence)

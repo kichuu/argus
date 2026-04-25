@@ -6,6 +6,7 @@ type Props = {
   height?: number;
   label?: string;
   showVal?: boolean;
+  unit?: string;
 };
 
 export function Bar({
@@ -16,6 +17,7 @@ export function Bar({
   height = 4,
   label,
   showVal = false,
+  unit = "%",
 }: Props) {
   const pct = Math.max(0, Math.min(1, value / max));
   return (
@@ -29,8 +31,8 @@ export function Bar({
         <div style={{ width: `${pct * 100}%`, height: "100%", background: color }} />
       </div>
       {showVal && (
-        <span className="tab" style={{ color: "var(--ink-1)", minWidth: 26, textAlign: "right" }}>
-          {(pct * 100).toFixed(0)}
+        <span className="tab" style={{ color: "var(--ink-1)", minWidth: 32, textAlign: "right" }}>
+          {(pct * 100).toFixed(0)}{unit}
         </span>
       )}
     </div>

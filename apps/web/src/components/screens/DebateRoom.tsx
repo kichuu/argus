@@ -240,9 +240,24 @@ function MessageRow({ m }: { m: AgentMessage }) {
   );
 }
 
-function CastPanel({ messages }: { messages: AgentMessage[] }) {
+type CastSelection = string | "__synthesis__" | "__all__" | null;
+
+function CastPanel({
+  messages,
+  claimCount,
+  selected,
+  onSelect,
+}: {
+  messages: AgentMessage[];
+  claimCount: number;
+  selected: CastSelection;
+  onSelect: (key: CastSelection) => void;
+}) {
   const groups = useMemo(() => {
-    const map = new Map<string, { key: string; agent: string; count: number; last: string }>();
+    const map = new Map<
+      string,
+      { key: string; agent: string; role: string; count: number; last: string }
+    >();
     for (const m of messages) {
       const key = m.persona_id ?? m.agent_id ?? m.role;
       const existing = map.get(key);
@@ -250,14 +265,92 @@ function CastPanel({ messages }: { messages: AgentMessage[] }) {
         existing.count += 1;
         existing.last = m.created_at;
       } else {
-        map.set(key, { key, agent: m.agent_id, count: 1, last: m.created_at });
+        map.set(key, {
+          key,
+          agent: m.agent_id,
+          role: m.role,
+          count: 1,
+          last: m.created_at,
+        });
       }
     }
     return Array.from(map.values());
   }, [messages]);
 
+  const VirtualEntry = ({
+    selKey,
+    label,
+    sub,
+    icon,
+  }: {
+    selKey: CastSelection;
+    label: string;
+    sub: string;
+    icon: string;
+  }) => {
+    const active = selected === selKey;
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(selKey)}
+        style={{
+          all: "unset",
+          padding: "10px 12px",
+          borderBottom: "1px solid var(--line-1)",
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+          borderLeft: `2px solid ${active ? "var(--amber)" : "transparent"}`,
+          background: active ? "var(--bg-3)" : "transparent",
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}
+      >
+        <div
+          style={{
+            width: 26,
+            height: 26,
+            border: "1px solid var(--line-2)",
+            color: active ? "var(--amber)" : "var(--ink-1)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 14,
+            background: "var(--bg-2)",
+          }}
+        >
+          {icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 11,
+              color: active ? "var(--amber)" : "var(--ink-0)",
+              fontWeight: active ? 600 : 400,
+            }}
+          >
+            {label}
+          </div>
+          <div style={{ fontSize: 9, color: "var(--ink-2)" }}>{sub}</div>
+        </div>
+      </button>
+    );
+  };
+
   return (
     <div className="col" style={{ overflowY: "auto" }}>
+      <VirtualEntry
+        selKey="__synthesis__"
+        label="Synthesis"
+        sub={`${claimCount} claim${claimCount === 1 ? "" : "s"}`}
+        icon="◆"
+      />
+      <VirtualEntry
+        selKey="__all__"
+        label="All Debate"
+        sub={`${messages.length} message${messages.length === 1 ? "" : "s"}`}
+        icon="≡"
+      />
       {groups.length === 0 ? (
         <div style={{ padding: "12px 14px", fontSize: 11, color: "var(--ink-3)" }}>
           ── awaiting cast ──
@@ -265,16 +358,23 @@ function CastPanel({ messages }: { messages: AgentMessage[] }) {
       ) : (
         groups.map((g) => {
           const color = colorFor(g.key);
+          const active = selected === g.key;
           return (
-            <div
+            <button
+              type="button"
               key={g.key}
+              onClick={() => onSelect(g.key)}
               style={{
+                all: "unset",
                 padding: "10px 12px",
                 borderBottom: "1px solid var(--line-1)",
                 display: "flex",
                 gap: 8,
                 alignItems: "center",
                 borderLeft: `2px solid ${color}`,
+                background: active ? "var(--bg-3)" : "transparent",
+                cursor: "pointer",
+                fontFamily: "inherit",
               }}
             >
               <div
@@ -297,7 +397,8 @@ function CastPanel({ messages }: { messages: AgentMessage[] }) {
                 <div
                   style={{
                     fontSize: 11,
-                    color: "var(--ink-0)",
+                    color: active ? "var(--amber)" : "var(--ink-0)",
+                    fontWeight: active ? 600 : 400,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -306,10 +407,10 @@ function CastPanel({ messages }: { messages: AgentMessage[] }) {
                   {g.agent}
                 </div>
                 <div style={{ fontSize: 9, color: "var(--ink-2)" }}>
-                  {g.count} msg{g.count === 1 ? "" : "s"} · {relTime(g.last)}
+                  {g.role} · {g.count} msg{g.count === 1 ? "" : "s"} · {relTime(g.last)}
                 </div>
               </div>
-            </div>
+            </button>
           );
         })
       )}
@@ -334,6 +435,146 @@ function ModeIndicator({ mode }: { mode: StreamMode }) {
     <Chip tone={tone}>
       <Dot tone={tone} pulse={mode === "ws"} /> {label}
     </Chip>
+  );
+}
+
+function CenterView({
+  transcriptRef,
+  discussionId,
+  messageList,
+  stream,
+  sStatus,
+  hasStatus,
+  isTerminal,
+  failed,
+  castSelection,
+  onSelect,
+}: {
+  transcriptRef: React.RefObject<HTMLDivElement | null>;
+  discussionId: string | null;
+  messageList: AgentMessage[];
+  stream: ReturnType<typeof useDiscussionStream>;
+  sStatus: DStatus;
+  hasStatus: boolean;
+  isTerminal: boolean;
+  failed: boolean;
+  castSelection: CastSelection;
+  onSelect: (key: CastSelection) => void;
+}) {
+  // Resolve effective view: explicit cast pick -> if null, default to
+  // synthesis when terminal, all-debate while running.
+  const effective: CastSelection =
+    castSelection ??
+    (isTerminal && stream.claims.length > 0 ? "__synthesis__" : "__all__");
+
+  const filteredMessages = useMemo(() => {
+    if (effective === "__all__" || effective === "__synthesis__") return messageList;
+    return messageList.filter(
+      (m) => (m.persona_id ?? m.agent_id ?? m.role) === effective,
+    );
+  }, [effective, messageList]);
+
+  const headerLabel =
+    effective === "__synthesis__"
+      ? "SYNTHESIS"
+      : effective === "__all__"
+        ? "ALL DEBATE"
+        : `AGENT · ${filteredMessages[0]?.agent_id ?? "—"}`;
+
+  const sub =
+    effective === "__synthesis__"
+      ? `${stream.claims.length} claim${stream.claims.length === 1 ? "" : "s"}`
+      : `${filteredMessages.length} msg${filteredMessages.length === 1 ? "" : "s"}`;
+
+  return (
+    <div className="col grow" style={{ overflow: "hidden" }}>
+      <div
+        className="row"
+        style={{
+          padding: "8px 14px",
+          borderBottom: "1px solid var(--line-2)",
+          background: "var(--bg-1)",
+          alignItems: "center",
+          gap: 10,
+          flexShrink: 0,
+        }}
+      >
+        <span className="tt-up amber" style={{ fontSize: 10, fontWeight: 600 }}>
+          {headerLabel}
+        </span>
+        <span className="muted tt-up" style={{ fontSize: 9 }}>
+          {sub}
+        </span>
+        <div style={{ flex: 1 }} />
+        {castSelection !== null && (
+          <button
+            type="button"
+            onClick={() => onSelect(null)}
+            className="tt-up"
+            style={{
+              all: "unset",
+              fontSize: 9,
+              padding: "3px 8px",
+              border: "1px solid var(--line-2)",
+              cursor: "pointer",
+              color: "var(--ink-1)",
+              background: "transparent",
+            }}
+          >
+            ← back to default
+          </button>
+        )}
+      </div>
+      <div ref={transcriptRef} className="grow" style={{ overflowY: "auto", padding: "12px 0" }}>
+        {!discussionId && (
+          <div
+            style={{
+              padding: 32,
+              textAlign: "center",
+              color: "var(--ink-2)",
+              fontSize: 12,
+            }}
+          >
+            ── enter a topic and hit RUN to convene the council ──
+          </div>
+        )}
+        {discussionId && effective === "__synthesis__" && (
+          <SynthesisPanel claims={stream.claims} />
+        )}
+        {discussionId && effective !== "__synthesis__" && filteredMessages.length === 0 && hasStatus && (
+          <div style={{ padding: 24, color: "var(--ink-3)", fontSize: 11, textAlign: "center" }}>
+            ── no messages from this agent yet ──
+          </div>
+        )}
+        {discussionId &&
+          effective !== "__synthesis__" &&
+          filteredMessages.map((m) => <MessageRow key={m.id} m={m} />)}
+        {discussionId && hasStatus && !isTerminal && effective !== "__synthesis__" && (
+          <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
+            <AsciiSpinner /> {sStatus}...
+          </div>
+        )}
+        {failed && (
+          <div
+            style={{
+              padding: 24,
+              margin: 16,
+              border: "1px solid var(--red-dim)",
+              background: "var(--bg-2)",
+              fontSize: 11,
+              color: "var(--red)",
+            }}
+          >
+            ── debate failed ──
+            {stream.errorDetail && (
+              <div style={{ marginTop: 8, color: "var(--ink-1)", fontFamily: "inherit" }}>
+                {stream.errorDetail}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -399,6 +640,7 @@ export function DebateRoom() {
   const [discussionId, setDiscussionId] = useState<string | null>(urlId);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [castSelection, setCastSelection] = useState<CastSelection>(null);
 
   // Reload an existing discussion when URL id changes (e.g. clicked from /ops).
   useEffect(() => {
@@ -561,64 +803,32 @@ export function DebateRoom() {
             overflow: "hidden",
           }}
         >
-          <SectionHeader id="P" title="Cast" sub={`${new Set(messageList.map((m) => m.persona_id ?? m.agent_id)).size} agents`} />
-          <CastPanel messages={messageList} />
+          <SectionHeader
+            id="P"
+            title="Cast"
+            sub={`${new Set(messageList.map((m) => m.persona_id ?? m.agent_id)).size} agents · click to view`}
+          />
+          <CastPanel
+            messages={messageList}
+            claimCount={stream.claims.length}
+            selected={castSelection}
+            onSelect={setCastSelection}
+          />
         </div>
 
         <div className="col grow" style={{ overflow: "hidden", background: "var(--bg-0)" }}>
-          <div ref={transcriptRef} className="grow" style={{ overflowY: "auto", padding: "12px 0" }}>
-            {!discussionId && (
-              <div
-                style={{
-                  padding: 32,
-                  textAlign: "center",
-                  color: "var(--ink-2)",
-                  fontSize: 12,
-                }}
-              >
-                ── enter a topic and hit RUN to convene the council ──
-              </div>
-            )}
-            {messageList.map((m) => (
-              <MessageRow key={m.id} m={m} />
-            ))}
-            {discussionId && hasStatus && !isTerminal && (
-              <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
-                <AsciiSpinner /> {sStatus}...
-              </div>
-            )}
-            {failed && (
-              <div
-                style={{
-                  padding: 24,
-                  margin: 16,
-                  border: "1px solid var(--red-dim)",
-                  background: "var(--bg-2)",
-                  fontSize: 11,
-                  color: "var(--red)",
-                }}
-              >
-                ── debate failed ──
-                {stream.errorDetail && (
-                  <div style={{ marginTop: 8, color: "var(--ink-1)", fontFamily: "inherit" }}>
-                    {stream.errorDetail}
-                  </div>
-                )}
-              </div>
-            )}
-            {sStatus === "completed" && (
-              <div
-                style={{
-                  padding: 24,
-                  textAlign: "center",
-                  color: "var(--ink-2)",
-                  fontSize: 11,
-                }}
-              >
-                ─── debate concluded · synthesis below ───
-              </div>
-            )}
-          </div>
+          <CenterView
+            transcriptRef={transcriptRef}
+            discussionId={discussionId}
+            messageList={messageList}
+            stream={stream}
+            sStatus={sStatus}
+            hasStatus={hasStatus}
+            isTerminal={isTerminal}
+            failed={failed}
+            castSelection={castSelection}
+            onSelect={setCastSelection}
+          />
         </div>
 
         <div

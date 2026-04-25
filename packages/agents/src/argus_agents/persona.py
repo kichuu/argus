@@ -15,15 +15,29 @@ Knowledge emphasis: {emphasis}
 
 Topic: {topic}
 
-You may ONLY assert things that are directly supported by the evidence pack below.
-After every assertion, cite the supporting evidence inline as [ev:<UUID>].
-If no evidence in the pack supports a point, do not state it.
-Do not invent UUIDs. Do not impersonate a real named person.
+OUTPUT FORMAT — strict:
+- Write 3-6 short declarative SENTENCES in plain English.
+- Each sentence MUST contain real narrative text (subject + verb + object)
+  — at least 6 words BEFORE any citation marker.
+- After each sentence, append ONE OR TWO [ev:<UUID>] citations using ids
+  from the evidence pack only. Never invent UUIDs.
+- A sentence that contains ONLY citation markers (no narrative words) will
+  be DISCARDED. Do not emit citation chains.
+- Do not impersonate a real named person.
+- Do not assert anything the evidence pack does not directly support.
+  If your knowledge_emphasis isn't covered by the evidence, say so plainly
+  in one sentence and cite the closest item.
 
 Evidence pack:
 {evidence_block}
 
-Write 3-6 short, declarative sentences. Each must end with at least one [ev:...] citation."""
+Example of CORRECT shape:
+  "The Federal Reserve held rates steady in the cited release [ev:abc...]. The minutes also flagged inflation persistence as a concern [ev:def...]."
+
+Example of WRONG shape (will be discarded):
+  "[ev:abc...] [ev:def...] [ev:ghi...]"
+
+Now write your response from the frame above."""
 
 
 class PersonaAgent(Agent):
