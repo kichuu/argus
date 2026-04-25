@@ -29,15 +29,28 @@ def _create_graph(psycopg, dsn: str, graph_name: str) -> None:
     print(f"Creating graph '{graph_name}'...")
     with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
         try:
-            cur.execute("LOAD 'age';")
+            # AGE must be in session_preload_libraries='age' on the target DB
+            # (LOAD 'age' requires superuser). Setup memo:
+            #   ALTER DATABASE argus SET session_preload_libraries='age';
             cur.execute('SET search_path = ag_catalog, "$user", public;')
             cur.execute("SELECT create_graph(%s);", (graph_name,))
+            print(f"  graph '{graph_name}' created.")
         except Exception as exc:
             msg = str(exc).lower()
             if "already exists" in msg or ("graph" in msg and "exists" in msg):
                 print(f"  graph '{graph_name}' already exists; skipping.")
+            elif "function create_graph" in msg or "create_graph" in msg and "does not exist" in msg:
+                print(
+                    f"  ERROR: AGE not loaded for this session ({exc}).\n"
+                    f"  Run as superuser, then retry init_db:\n"
+                    f"    sudo -u postgres psql -d argus -c "
+                    f"\"ALTER DATABASE argus SET session_preload_libraries='age';\"",
+                    file=sys.stderr,
+                )
+                raise
             else:
-                print(f"  graph creation skipped: {exc}")
+                print(f"  ERROR creating graph: {exc}", file=sys.stderr)
+                raise
 
 
 def _alembic_upgrade(repo_root: Path) -> None:
