@@ -70,12 +70,68 @@ function relTime(iso: string): string {
   return `${Math.floor(s / 86400)}d`;
 }
 
+const _EV_RE = /\[ev:([0-9a-fA-F-]{36})\]/g;
+
+// Convert raw [ev:UUID] markers in agent text into compact superscript [N]
+// chips that map to the message's evidence_refs index. Long citation chains
+// would otherwise render as wall-of-text garbage.
+function renderContent(content: string, refs: AgentMessage["evidence_refs"]): React.ReactNode {
+  if (!content) return null;
+  const idIndex = new Map<string, number>();
+  refs.forEach((r, i) => idIndex.set(String(r.source_id).toLowerCase(), i + 1));
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let key = 0;
+  const re = new RegExp(_EV_RE.source, "g");
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > last) parts.push(<span key={key++}>{content.slice(last, m.index)}</span>);
+    const id = m[1].toLowerCase();
+    const n = idIndex.get(id);
+    const ref = n ? refs[n - 1] : undefined;
+    parts.push(
+      <span
+        key={key++}
+        title={ref?.verbatim_span ?? id}
+        style={{
+          display: "inline-block",
+          fontSize: 9,
+          color: "var(--amber)",
+          border: "1px solid var(--amber-dim)",
+          padding: "0 3px",
+          margin: "0 1px",
+          verticalAlign: "super",
+          lineHeight: 1.2,
+          cursor: "help",
+        }}
+      >
+        {n ?? "?"}
+      </span>,
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < content.length) parts.push(<span key={key++}>{content.slice(last)}</span>);
+  const textOnly = content.replace(_EV_RE, "").trim();
+  if (!textOnly) {
+    return (
+      <span style={{ color: "var(--ink-3)", fontStyle: "italic" }}>
+        [no narrative — only citations: {refs.length}]
+      </span>
+    );
+  }
+  return <>{parts}</>;
+}
+
 function MessageRow({ m }: { m: AgentMessage }) {
   const key = m.persona_id ?? m.agent_id ?? m.role;
   const color = colorFor(key);
   const initials = initialsFor(key);
   const t = new Date(m.created_at);
   const tStr = `${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}:${String(t.getUTCSeconds()).padStart(2, "0")}`;
+  const isCritic = m.role === "critic";
+  const [expanded, setExpanded] = useState(!isCritic);
+  const refsToShow = m.evidence_refs.slice(0, 8);
+  const refsHidden = Math.max(0, m.evidence_refs.length - 8);
   return (
     <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line-1)" }}>
       <div className="row gap-3" style={{ alignItems: "flex-start" }}>
@@ -115,13 +171,35 @@ function MessageRow({ m }: { m: AgentMessage }) {
               lineHeight: 1.55,
               fontFamily: "'IBM Plex Sans', 'Inter', system-ui, sans-serif",
               whiteSpace: "pre-wrap",
+              maxHeight: expanded ? undefined : 120,
+              overflow: expanded ? undefined : "hidden",
+              position: "relative",
             }}
           >
-            {m.content}
+            {renderContent(m.content, m.evidence_refs)}
           </div>
-          {m.evidence_refs.length > 0 && (
+          {(isCritic || m.content.length > 600) && (
+            <button
+              type="button"
+              onClick={() => setExpanded((e) => !e)}
+              className="tt-up muted"
+              style={{
+                marginTop: 4,
+                fontSize: 9,
+                background: "transparent",
+                border: "none",
+                color: "var(--ink-2)",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                padding: 0,
+              }}
+            >
+              {expanded ? "− collapse" : "+ expand"}
+            </button>
+          )}
+          {refsToShow.length > 0 && (
             <div className="row gap-1" style={{ flexWrap: "wrap", marginTop: 8 }}>
-              {m.evidence_refs.map((e, i) => (
+              {refsToShow.map((e, i) => (
                 <span
                   key={i}
                   title={`${e.verbatim_span}`}
@@ -142,6 +220,18 @@ function MessageRow({ m }: { m: AgentMessage }) {
                   </span>
                 </span>
               ))}
+              {refsHidden > 0 && (
+                <span
+                  style={{
+                    fontSize: 9,
+                    color: "var(--ink-2)",
+                    padding: "0 4px",
+                    border: "1px dashed var(--line-2)",
+                  }}
+                >
+                  +{refsHidden} more
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -360,6 +450,20 @@ export function DebateRoom() {
             {isTerminal && finalClaimIds.length > 0 && (
               <Btn primary onClick={() => router.push("/library")}>
                 VIEW IN LIBRARY →
+              </Btn>
+            )}
+            {discussionId && (
+              <Btn
+                ghost
+                onClick={() => {
+                  setDiscussionId(null);
+                  setLaunchError(null);
+                  setTopic("");
+                  setStoredTopic("");
+                }}
+                title="clear and start a new debate"
+              >
+                × CLEAR
               </Btn>
             )}
           </div>
