@@ -1,10 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from argus_core.schemas import Claim, ClaimStatus, EvidenceRef, Persona
+from pydantic import ValidationError
 
 
 def _make_evidence(span: str = "the sky is blue", start: int = 0) -> EvidenceRef:
@@ -13,7 +12,7 @@ def _make_evidence(span: str = "the sky is blue", start: int = 0) -> EvidenceRef
         verbatim_span=span,
         char_start=start,
         char_end=start + len(span),
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
         trust_tier=2,
     )
 
@@ -25,7 +24,7 @@ def test_evidence_offset_must_match_span_length():
             verbatim_span="hello",
             char_start=0,
             char_end=10,  # 10 - 0 != len("hello")
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             trust_tier=2,
         )
 

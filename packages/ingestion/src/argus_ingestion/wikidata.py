@@ -1,7 +1,6 @@
 from typing import Any
 
 import httpx
-
 from argus_core.logging import get_logger
 from argus_core.schemas import Entity, EntityType
 from argus_core.settings import get_settings

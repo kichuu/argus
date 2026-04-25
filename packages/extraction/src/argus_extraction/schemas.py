@@ -1,6 +1,5 @@
-from pydantic import BaseModel, Field
-
 from argus_core.schemas import EntityType, RelationType
+from pydantic import BaseModel, Field
 
 
 class ExtractedClaim(BaseModel):

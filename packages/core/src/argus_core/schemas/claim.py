@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 from argus_core.schemas.evidence import EvidenceRef
 
 
-class ClaimStatus(str, Enum):
+class ClaimStatus(StrEnum):
     LIKELY_TRUE = "likely_true"
     CONTESTED = "contested"
     UNVERIFIED = "unverified"
@@ -36,8 +36,8 @@ class Claim(BaseModel):
     contradicting_evidence: list[EvidenceRef] = Field(default_factory=list)
     affected_entities: list[UUID] = Field(default_factory=list)
     agent_consensus: AgentConsensus = Field(default_factory=AgentConsensus)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @model_validator(mode="after")
     def must_have_supporting_evidence(self) -> Self:

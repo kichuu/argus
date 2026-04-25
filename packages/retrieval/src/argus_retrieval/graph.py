@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import text
-
 from argus_core.db.session import session_scope
 from argus_core.logging import get_logger
 from argus_core.schemas import Entity
+from sqlalchemy import text
 
 logger = get_logger(__name__)
 

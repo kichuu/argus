@@ -1,10 +1,9 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from argus_core.logging import configure_logging, get_logger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from argus_core.logging import configure_logging, get_logger
 
 from argus_api import __version__
 from argus_api.routes import claims, discussions, entities, health, sources

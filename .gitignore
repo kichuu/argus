@@ -52,3 +52,8 @@ phoenix_data/
 *.db
 *.sqlite
 *.sqlite3
+
+# Conversation exports — may contain pasted secrets
+convo*.txt
+conversation*.txt
+*.export.txt

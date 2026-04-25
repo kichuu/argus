@@ -1,8 +1,7 @@
 import re
 
-from simhash import Simhash, SimhashIndex
-
 from argus_core.logging import get_logger
+from simhash import Simhash, SimhashIndex
 
 logger = get_logger(__name__)
 
@@ -31,7 +30,4 @@ class SimHashDedup:
         sh = Simhash(_features(text), f=self._f)
         if threshold == self._k:
             return bool(self._index.get_near_dups(sh))
-        for stored in self._hashes.values():
-            if sh.distance(stored) <= threshold:
-                return True
-        return False
+        return any(sh.distance(stored) <= threshold for stored in self._hashes.values())

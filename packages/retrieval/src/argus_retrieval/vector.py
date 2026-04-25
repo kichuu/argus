@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from qdrant_client import AsyncQdrantClient, models
-
 from argus_core.logging import get_logger
 from argus_core.settings import get_settings
+from qdrant_client import AsyncQdrantClient, models
+
 from argus_retrieval.types import RetrievedSpan
 
 logger = get_logger(__name__)

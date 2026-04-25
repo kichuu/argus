@@ -1,14 +1,12 @@
 import hashlib
 
 import pytest
-
 from argus_core.schemas import EvidenceRef, Source
 from argus_extraction.verifier import (
     VerificationError,
     to_evidence_ref,
     verify_span,
 )
-
 
 RAW_TEXT = "The Fed raised rates by 25 basis points on March 1, 2025."
 

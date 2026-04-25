@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, HttpUrl
@@ -17,7 +17,7 @@ class Source(BaseModel):
     title: str
     content_hash: str = Field(description="sha256 hex digest of raw_text")
     raw_text: str
-    fetched_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     published_at: datetime | None = None
     license: str | None = None
     trust_tier: int = Field(ge=1, le=4, default=4)

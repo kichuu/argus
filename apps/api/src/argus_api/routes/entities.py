@@ -1,12 +1,11 @@
 from typing import Annotated, Any
 from uuid import UUID
 
+from argus_core.db.models import EntityModel, RelationModel
+from argus_core.schemas import Entity, EntityType
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from argus_core.db.models import EntityModel, RelationModel
-from argus_core.schemas import Entity, EntityType
 
 from argus_api.deps import get_session
 

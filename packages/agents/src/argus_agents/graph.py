@@ -1,15 +1,16 @@
 from typing import Any
 from uuid import UUID, uuid4
 
+from argus_core.logging import get_logger
+from argus_extraction.providers import Provider, family_of
+from langgraph.graph import END, StateGraph
+
 from argus_agents.critic import CriticAgent
 from argus_agents.master import MasterAgent
 from argus_agents.persona import PersonaAgent
 from argus_agents.research import ResearchAgent
 from argus_agents.state import DiscussionState, EvidencePack
 from argus_agents.synthesizer import SynthesizerAgent
-from argus_core.logging import get_logger
-from argus_extraction.providers import Provider, family_of
-from langgraph.graph import END, StateGraph
 
 logger = get_logger(__name__)
 

@@ -1,6 +1,5 @@
-from temporalio import activity
-
 from argus_core.logging import get_logger
+from temporalio import activity
 
 logger = get_logger(__name__)
 

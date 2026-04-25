@@ -1,10 +1,9 @@
 import asyncio
 
-from temporalio.client import Client
-from temporalio.worker import Worker
-
 from argus_core.logging import configure_logging, get_logger
 from argus_core.settings import get_settings
+from temporalio.client import Client
+from temporalio.worker import Worker
 
 from argus_workers.activities.discussion import (
     assemble_evidence_pack,

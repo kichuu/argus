@@ -21,31 +21,30 @@ def _require_psycopg():
 
 def _create_age(psycopg, dsn: str) -> None:
     print("Creating AGE extension...")
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute("CREATE EXTENSION IF NOT EXISTS age;")
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("CREATE EXTENSION IF NOT EXISTS age;")
 
 
 def _create_graph(psycopg, dsn: str, graph_name: str) -> None:
     print(f"Creating graph '{graph_name}'...")
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            try:
-                cur.execute("LOAD 'age';")
-                cur.execute('SET search_path = ag_catalog, "$user", public;')
-                cur.execute("SELECT create_graph(%s);", (graph_name,))
-            except Exception as exc:  # noqa: BLE001
-                msg = str(exc).lower()
-                if "already exists" in msg or "graph" in msg and "exists" in msg:
-                    print(f"  graph '{graph_name}' already exists; skipping.")
-                else:
-                    print(f"  graph creation skipped: {exc}")
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        try:
+            cur.execute("LOAD 'age';")
+            cur.execute('SET search_path = ag_catalog, "$user", public;')
+            cur.execute("SELECT create_graph(%s);", (graph_name,))
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "already exists" in msg or ("graph" in msg and "exists" in msg):
+                print(f"  graph '{graph_name}' already exists; skipping.")
+            else:
+                print(f"  graph creation skipped: {exc}")
 
 
 def _alembic_upgrade(repo_root: Path) -> None:
     print("Running alembic upgrade head...")
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     cfg = Config(str(repo_root / "alembic.ini"))
     cfg.set_main_option("script_location", str(repo_root / "alembic"))

@@ -1,10 +1,9 @@
 import json
 
 import openai
-from pydantic import BaseModel
-
 from argus_core.logging import get_logger
 from argus_core.settings import get_settings
+from pydantic import BaseModel
 
 from argus_extraction.providers.base import Provider
 

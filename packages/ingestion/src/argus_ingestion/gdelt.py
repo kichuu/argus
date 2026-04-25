@@ -1,15 +1,15 @@
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
-from dateutil import parser as date_parser
-
 from argus_core.logging import get_logger
 from argus_core.schemas import Source
 from argus_core.settings import get_settings
 from argus_core.trust import load_trust_config
+from dateutil import parser as date_parser
+
 from argus_ingestion.base import (
     SourceConnector,
     compute_content_hash,
@@ -79,7 +79,7 @@ class GDELTConnector(SourceConnector):
             title=title,
             content_hash=compute_content_hash(raw_text),
             raw_text=raw_text,
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             published_at=published_at,
             trust_tier=trust_tier,
             publisher=domain,
@@ -95,5 +95,5 @@ class GDELTConnector(SourceConnector):
         except (ValueError, TypeError):
             return None
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt

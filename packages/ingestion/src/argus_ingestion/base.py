@@ -3,10 +3,8 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 
-from bs4 import BeautifulSoup
-
 from argus_core.schemas import Source
-
+from bs4 import BeautifulSoup
 
 _WHITESPACE_RE = re.compile(r"\s+")
 

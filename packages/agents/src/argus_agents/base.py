@@ -2,9 +2,10 @@ import re
 from abc import ABC, abstractmethod
 from uuid import UUID
 
-from argus_agents.state import DiscussionState
 from argus_core.logging import get_logger
 from argus_core.schemas import AgentRole
+
+from argus_agents.state import DiscussionState
 
 logger = get_logger(__name__)
 

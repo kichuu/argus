@@ -23,7 +23,7 @@ class TrustConfig(BaseModel):
     )
 
     def tier_for_domain(self, domain: str) -> int:
-        domain = domain.lower().lstrip("www.")
+        domain = domain.lower().removeprefix("www.")
         if domain in self.domain_overrides:
             return self.domain_overrides[domain]
         return 4

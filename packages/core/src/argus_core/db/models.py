@@ -5,12 +5,11 @@ JSONB columns hold nested evidence/relation arrays where graph traversal is
 not needed; AGE handles entity-relation traversal separately.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
     ARRAY,
-    JSON,
     DateTime,
     Float,
     ForeignKey,
@@ -19,16 +18,16 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from argus_core.db.base import Base
 
 
 def _utc_now() -> datetime:
-    from datetime import timezone
 
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class EntityModel(Base):

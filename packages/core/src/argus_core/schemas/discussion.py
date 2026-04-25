@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from argus_core.schemas.evidence import EvidenceRef
 
 
-class DiscussionStatus(str, Enum):
+class DiscussionStatus(StrEnum):
     PLANNING = "planning"
     RESEARCHING = "researching"
     DEBATING = "debating"
@@ -16,7 +16,7 @@ class DiscussionStatus(str, Enum):
     FAILED = "failed"
 
 
-class AgentRole(str, Enum):
+class AgentRole(StrEnum):
     RESEARCH = "research"
     MASTER = "master"
     PERSONA = "persona"
@@ -39,7 +39,7 @@ class AgentMessage(BaseModel):
     content: str
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)
     parent_message_id: UUID | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class DiscussionRun(BaseModel):
@@ -50,6 +50,6 @@ class DiscussionRun(BaseModel):
     persona_ids: list[UUID] = Field(default_factory=list)
     evidence_pack: list[EvidenceRef] = Field(default_factory=list)
     final_claim_ids: list[UUID] = Field(default_factory=list)
-    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     error: str | None = None

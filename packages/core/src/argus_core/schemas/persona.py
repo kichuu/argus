@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -23,7 +23,7 @@ class Persona(BaseModel):
     frame: str = Field(min_length=3, max_length=120)
     description: str
     knowledge_emphasis: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @model_validator(mode="after")
     def reject_impersonation(self) -> Self:

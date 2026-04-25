@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from argus_core.schemas.evidence import EvidenceRef
 
 
-class RelationType(str, Enum):
+class RelationType(StrEnum):
     EMPLOYED_BY = "employed_by"
     LOCATED_IN = "located_in"
     PART_OF = "part_of"
@@ -31,4 +31,4 @@ class Relation(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     valid_from: datetime | None = None
     valid_to: datetime | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

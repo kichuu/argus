@@ -10,7 +10,7 @@ from eval.harness.citation_precision import evaluate_extraction, load_gold
 
 try:
     from argus_extraction.extractor import ClaimExtractor  # type: ignore
-except Exception:  # noqa: BLE001
+except Exception:
     ClaimExtractor = None  # type: ignore[assignment]
 
 
@@ -46,7 +46,7 @@ def _run_extraction(gold_items: list[Any]) -> list[dict[str, Any]]:
     for g in gold_items:
         try:
             extracted = extractor.extract(g.source_text, source_url=g.source_url)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"extraction failed for {g.id}: {exc}", file=sys.stderr)
             continue
         for c in extracted:

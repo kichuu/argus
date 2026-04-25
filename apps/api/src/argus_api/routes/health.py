@@ -1,10 +1,9 @@
 from typing import Annotated
 
+from argus_core.logging import get_logger
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from argus_core.logging import get_logger
 
 from argus_api import __version__
 from argus_api.deps import get_session

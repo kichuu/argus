@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from argus_core.logging import get_logger
+
 from argus_retrieval.embeddings import Embedder
 from argus_retrieval.graph import GraphQuerier
 from argus_retrieval.rerank import Reranker
@@ -44,10 +45,10 @@ class HybridRetriever:
 
     @staticmethod
     def _apply_recency(spans: Iterable[RetrievedSpan]) -> list[RetrievedSpan]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         out: list[RetrievedSpan] = []
         for s in spans:
-            fetched = s.fetched_at if s.fetched_at.tzinfo else s.fetched_at.replace(tzinfo=timezone.utc)
+            fetched = s.fetched_at if s.fetched_at.tzinfo else s.fetched_at.replace(tzinfo=UTC)
             age_days = max(0.0, (now - fetched).total_seconds() / 86400.0)
             weight = math.exp(-age_days * RECENCY_DECAY)
             out.append(s.model_copy(update={"score": s.score * weight}))

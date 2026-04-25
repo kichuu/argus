@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
-from enum import Enum
+from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
 
-class EntityType(str, Enum):
+class EntityType(StrEnum):
     PERSON = "person"
     ORG = "org"
     PLACE = "place"
@@ -22,5 +22,5 @@ class Entity(BaseModel):
     wikidata_id: str | None = Field(default=None, description="Wikidata Q-ID, e.g. Q42")
     aliases: list[str] = Field(default_factory=list)
     description: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -1,7 +1,6 @@
-from temporalio.client import Client
-
 from argus_core.logging import get_logger
 from argus_core.settings import get_settings
+from temporalio.client import Client
 
 logger = get_logger(__name__)
 

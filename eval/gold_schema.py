@@ -1,6 +1,5 @@
-from pydantic import BaseModel
-
 from argus_core.schemas import ClaimStatus
+from pydantic import BaseModel
 
 
 class GoldClaim(BaseModel):

@@ -1,12 +1,11 @@
 from typing import Any
 from uuid import UUID, uuid4
 
-from temporalio import activity
-
 from argus_core.db.models import DiscussionRunModel
 from argus_core.db.session import session_scope
 from argus_core.logging import get_logger
 from argus_core.schemas import DiscussionStatus
+from temporalio import activity
 
 logger = get_logger(__name__)
 

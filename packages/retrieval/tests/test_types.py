@@ -1,10 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from argus_retrieval.types import RetrievedSpan
+from pydantic import ValidationError
 
 
 def test_retrieved_span_validates() -> None:
@@ -13,7 +12,7 @@ def test_retrieved_span_validates() -> None:
         char_start=0,
         char_end=11,
         source_id=uuid4(),
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
         trust_tier=2,
         score=0.91,
     )
@@ -28,7 +27,7 @@ def test_retrieved_span_rejects_offset_mismatch() -> None:
             char_start=0,
             char_end=11,
             source_id=uuid4(),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             trust_tier=2,
             score=0.5,
         )
@@ -41,7 +40,7 @@ def test_retrieved_span_rejects_inverted_offsets() -> None:
             char_start=10,
             char_end=10,
             source_id=uuid4(),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             trust_tier=1,
             score=0.0,
         )
@@ -54,7 +53,7 @@ def test_retrieved_span_trust_tier_bounds() -> None:
             char_start=0,
             char_end=2,
             source_id=uuid4(),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             trust_tier=5,
             score=0.0,
         )

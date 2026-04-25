@@ -1,7 +1,6 @@
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from argus_api.main import app
+from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio

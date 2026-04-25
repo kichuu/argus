@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from argus_core.logging import get_logger
 from argus_core.settings import get_settings
+
 from argus_retrieval.types import RetrievedSpan
 
 if TYPE_CHECKING:

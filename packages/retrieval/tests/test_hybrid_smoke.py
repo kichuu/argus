@@ -1,9 +1,8 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-
 from argus_retrieval.hybrid import HybridRetriever
 from argus_retrieval.types import RetrievedSpan
 
@@ -14,7 +13,7 @@ def _make_span(score: float = 0.5) -> RetrievedSpan:
         char_start=0,
         char_end=19,
         source_id=uuid4(),
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
         trust_tier=2,
         score=score,
         entity_ids=[],
@@ -51,7 +50,7 @@ async def test_retrieval_chain_orders_calls(mocker) -> None:
     graph.neighbors.assert_awaited()
     vector.search_dense.assert_awaited_once()
     reranker.rerank.assert_awaited_once()
-    args, kwargs = vector.search_dense.call_args
+    _args, kwargs = vector.search_dense.call_args
     entity_filter = kwargs.get("entity_filter")
     assert entity_filter is not None
     assert mention in entity_filter
@@ -78,5 +77,5 @@ async def test_retrieval_without_entities_skips_graph(mocker) -> None:
 
     assert out == [candidate]
     graph.neighbors.assert_not_awaited()
-    args, kwargs = vector.search_dense.call_args
+    _args, kwargs = vector.search_dense.call_args
     assert kwargs.get("entity_filter") is None
