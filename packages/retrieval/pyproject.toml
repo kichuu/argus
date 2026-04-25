@@ -5,10 +5,17 @@ description = "Argus retrieval: hybrid Qdrant + Apache AGE graph retrieval with 
 requires-python = ">=3.12"
 dependencies = [
     "argus-core",
+    "argus-ingestion",
     "qdrant-client>=1.13",
     "sentence-transformers>=3.3",
     "cohere>=5.13",
     "numpy>=1.26",
+    "openai>=1.55",
+    "httpx>=0.28",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.3",
+    "pydantic>=2.9",
+    "sqlalchemy>=2.0",
 ]
 
 [build-system]

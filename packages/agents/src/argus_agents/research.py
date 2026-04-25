@@ -11,10 +11,27 @@ logger = get_logger(__name__)
 
 
 class ResearchAgent(Agent):
-    def __init__(self, retriever: Any, model: str | None = None, top_k: int = 24) -> None:
+    """Builds an :class:`EvidencePack` from a duck-typed retriever.
+
+    The retriever may be either the legacy :class:`HybridRetriever` or the
+    new :class:`ResearchLoop`; both expose ``async retrieve(topic, top_k)``
+    and return :class:`RetrievedSpan` instances.  ``min_evidence`` is an
+    operational signal: when fewer than this many spans come back, the
+    agent emits a structured warning so we can spot topics where
+    web-search isn't recovering useful documents.
+    """
+
+    def __init__(
+        self,
+        retriever: Any,
+        model: str | None = None,
+        top_k: int = 24,
+        min_evidence: int = 5,
+    ) -> None:
         super().__init__(AgentRole.RESEARCH, model or get_settings().default_research_model)
         self.retriever = retriever
         self.top_k = top_k
+        self.min_evidence = min_evidence
 
     async def step(self, state: DiscussionState) -> DiscussionState:
         spans = await self.retriever.retrieve(state.topic, top_k=self.top_k)
@@ -41,9 +58,17 @@ class ResearchAgent(Agent):
 
         state.evidence_pack = EvidencePack(
             topic=state.topic,
+            vertical=state.evidence_pack.vertical,
             evidence=evidence,
             entities=sorted(entity_ids, key=str),
         )
+        if len(evidence) < self.min_evidence:
+            logger.warning(
+                "research_pack_below_min_evidence",
+                topic=state.topic,
+                evidence_count=len(evidence),
+                min_evidence=self.min_evidence,
+            )
         logger.info(
             "research_pack_built",
             topic=state.topic,
