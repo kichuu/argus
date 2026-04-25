@@ -238,9 +238,9 @@ async def test_run_discussion_graph_persists_messages(monkeypatch: pytest.Monkey
     assert result["n_messages"] == 2
     assert result["n_claims"] == 1
     assert len(result["final_claims"]) == 1
-    assert row.status == DiscussionStatus.SYNTHESIZING.value
-    persisted_messages = [a for a in session.added if hasattr(a, "agent_id")]
-    assert len(persisted_messages) == 2
+    # Status is now driven by the orchestrator's on_phase callback (debating ->
+    # criticizing -> synthesizing -> completed), not by the activity itself.
+    # Messages are persisted live via on_post — the activity no longer batches.
     fake_orch.run.assert_awaited_once_with("Topic D", vertical="finance", discussion_id=did)
     fake_pubsub.close.assert_awaited()
 

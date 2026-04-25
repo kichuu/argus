@@ -249,28 +249,13 @@ async def run_discussion_graph(discussion_id: str) -> dict[str, Any]:
     persona_ids = [str(p.id) for p in state.personas]
     final_claim_ids = [str(c.id) for c in state.final_claims]
 
-    # Stage final claim ids onto the discussion now (full Claim rows are written
-    # in persist_results). Also flip the status to synthesizing so pollers see
-    # the transition and persist messages in a single batch.
+    # Messages are persisted live by the on_post callback above; the orchestrator's
+    # on_phase callback already flips status to "synthesizing" / "completed". Just
+    # stage the persona + final-claim ids for downstream consumers.
     async with session_scope() as session:
         row = await _load_discussion(session, discussion_id)
-        row.status = DiscussionStatus.SYNTHESIZING.value
         row.persona_ids = persona_ids
         row.final_claim_ids = final_claim_ids
-        for msg in state.messages:
-            session.add(
-                AgentMessageModel(
-                    id=msg.id,
-                    discussion_id=did,
-                    agent_id=msg.agent_id,
-                    persona_id=msg.persona_id,
-                    role=msg.role.value if hasattr(msg.role, "value") else str(msg.role),
-                    content=msg.content,
-                    evidence_refs=[ref.model_dump(mode="json") for ref in msg.evidence_refs],
-                    parent_message_id=msg.parent_message_id,
-                    created_at=msg.created_at,
-                )
-            )
 
     # Activity boundaries are dict-only, so persist_results gets the serialized
     # final_claims via this return value rather than re-running the graph.

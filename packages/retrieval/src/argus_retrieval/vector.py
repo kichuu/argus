@@ -28,6 +28,8 @@ class VectorIndex:
         self._client = client or AsyncQdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key or None,
+            timeout=30,
+            check_compatibility=False,
         )
         self._collection = collection or settings.qdrant_collection_evidence
         self._dense_dim = dense_dim
@@ -127,17 +129,35 @@ class VectorIndex:
         )
 
     @staticmethod
-    def _hit_to_span(payload: dict[str, Any], score: float) -> RetrievedSpan:
-        return RetrievedSpan(
-            verbatim_span=payload["verbatim_span"],
-            char_start=int(payload["char_start"]),
-            char_end=int(payload["char_end"]),
-            source_id=UUID(payload["source_id"]),
-            fetched_at=datetime.fromisoformat(payload["fetched_at"]),
-            trust_tier=int(payload["trust_tier"]),
-            score=score,
-            entity_ids=[UUID(e) for e in payload.get("entity_ids", [])],
-        )
+    def _hit_to_span(payload: dict[str, Any], score: float) -> RetrievedSpan | None:
+        # Tolerate legacy payloads that wrote 'span' instead of 'verbatim_span',
+        # and skip any point missing the required fields entirely (returning None
+        # so the caller can filter; raising would tank the whole retrieval).
+        text = payload.get("verbatim_span") or payload.get("span")
+        src = payload.get("source_id")
+        if not text or not src:
+            return None
+        try:
+            entity_ids: list[UUID] = []
+            for e in payload.get("entity_ids", []) or []:
+                try:
+                    entity_ids.append(UUID(str(e)))
+                except (ValueError, TypeError):
+                    # legacy points stored entity_ids as plain names; skip
+                    continue
+            return RetrievedSpan(
+                verbatim_span=text,
+                char_start=int(payload.get("char_start", 0)),
+                char_end=int(payload.get("char_end", len(text))),
+                source_id=UUID(str(src)),
+                fetched_at=datetime.fromisoformat(payload["fetched_at"]),
+                trust_tier=int(payload.get("trust_tier", 4)),
+                score=score,
+                entity_ids=entity_ids,
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.warning("vector_payload_skipped", error=str(exc))
+            return None
 
     async def search_dense(
         self,
@@ -153,7 +173,8 @@ class VectorIndex:
             query_filter=self._entity_filter(entity_filter),
             with_payload=True,
         )
-        return [self._hit_to_span(p.payload or {}, p.score) for p in results.points]
+        spans = [self._hit_to_span(p.payload or {}, p.score) for p in results.points]
+        return [s for s in spans if s is not None]
 
     async def search_hybrid(
         self,

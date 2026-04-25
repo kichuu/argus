@@ -82,8 +82,31 @@ class LocalReranker(Reranker):
         return [c.model_copy(update={"score": s}) for c, s in scored[:top_k]]
 
 
+class NoOpReranker(Reranker):
+    """Returns candidates as-is. Default — skips reranking entirely.
+
+    Local CrossEncoder reranking pulls a 1.1GB model on first use, which
+    blocks discussion runs for minutes. Cohere reranker requires an API
+    key. NoOp is the right default for dev and small indexes; opt into
+    cohere/local via RERANKER_PROVIDER env when you need it.
+    """
+
+    async def rerank(
+        self, query: str, candidates: list[RetrievedSpan], top_k: int = 10
+    ) -> list[RetrievedSpan]:
+        return candidates[:top_k]
+
+
 def get_reranker() -> Reranker:
     settings = get_settings()
-    if settings.cohere_api_key:
+    provider = (settings.reranker_provider or "none").strip().lower()
+    if provider == "cohere":
+        if not settings.cohere_api_key:
+            logger.warning("reranker_provider_cohere_no_key_falling_back_to_noop")
+            return NoOpReranker()
         return CohereReranker(api_key=settings.cohere_api_key)
-    return LocalReranker()
+    if provider == "local":
+        return LocalReranker()
+    if provider not in {"none", ""}:
+        logger.warning("reranker_provider_unknown_falling_back_to_noop", provider=provider)
+    return NoOpReranker()

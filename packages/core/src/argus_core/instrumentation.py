@@ -87,18 +87,21 @@ def _instrument_httpx() -> None:
 
 
 def _instrument_openai_via_phoenix(endpoint: str, service_name: str) -> None:
-    """Phoenix's OpenAI instrumentation traces every LLM call with prompts, tokens, latency."""
+    """OpenInference wires LLM-call spans onto the global OTel tracer.
+
+    We deliberately do NOT call phoenix.otel.register(): it overrides our
+    BatchSpanProcessor with a SimpleSpanProcessor pointing at the Phoenix
+    collector, which blocks every span export for ~30s when Phoenix isn't
+    running — and that turns out to deadlock the orchestrator since DB +
+    HTTP spans propagate through the same processor. Stick with the global
+    BatchSpanProcessor + OTLP exporter; Phoenix can subscribe to those
+    when the user actually starts it.
+    """
     try:
         from openinference.instrumentation.openai import OpenAIInstrumentor
 
         OpenAIInstrumentor().instrument(skip_dep_check=True)
-        # Phoenix-specific helper sends spans to the phoenix collector if available.
-        try:
-            from phoenix.otel import register
-
-            register(project_name=service_name, endpoint=endpoint)
-        except Exception:
-            pass  # Phoenix is nice-to-have; if unavailable just emit via standard OTLP.
+        del endpoint, service_name  # kept in signature for API stability
     except Exception as exc:
         structlog.get_logger(__name__).warning(
             "openai instrumentation skipped", error=str(exc)
