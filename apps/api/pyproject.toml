@@ -1,0 +1,23 @@
+[project]
+name = "argus-api"
+version = "0.1.0"
+description = "Argus FastAPI service: claims/entities/sources/discussions endpoints"
+requires-python = ">=3.12"
+dependencies = [
+    "argus-core",
+    "argus-retrieval",
+    "argus-extraction",
+    "argus-agents",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "temporalio>=1.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/argus_api"]

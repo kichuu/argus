@@ -1,0 +1,20 @@
+[project]
+name = "argus-workers"
+version = "0.1.0"
+description = "Argus Temporal worker: ingestion + discussion workflows"
+requires-python = ">=3.12"
+dependencies = [
+    "argus-core",
+    "argus-ingestion",
+    "argus-extraction",
+    "argus-retrieval",
+    "argus-agents",
+    "temporalio>=1.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/argus_workers"]
