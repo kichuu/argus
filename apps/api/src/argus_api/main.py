@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from argus_api import __version__
 from argus_api.ingest_scheduler import get_scheduler, maybe_start_scheduler
 from argus_api.routes import (
+    activity,
     claims,
     config,
     discussions,
@@ -15,6 +16,7 @@ from argus_api.routes import (
     health,
     metrics,
     personas,
+    search,
     sources,
     suggested,
 )
@@ -57,3 +59,5 @@ app.include_router(personas.router)
 app.include_router(suggested.router)
 app.include_router(config.router)
 app.include_router(metrics.router)
+app.include_router(search.router)
+app.include_router(activity.router)

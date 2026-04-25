@@ -1,79 +1,107 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ARGUS_DATA } from "@/mock/data";
+import { useQuery } from "@tanstack/react-query";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { api, type SearchHit, type SearchKind } from "@/lib/api";
 import { useUIStore } from "@/store/ui";
-import { NAV_SECTIONS } from "./Sidebar";
 
-type Item = {
-  kind: "nav" | "debate" | "persona" | "entity";
-  id: string;
-  label: string;
-  code: string;
-  group: string;
-  href?: string;
+type Section = { kind: SearchKind; label: string; hits: SearchHit[] };
+
+const KIND_LABELS: Record<SearchKind, string> = {
+  claims: "Claims",
+  sources: "Sources",
+  entities: "Entities",
+  discussions: "Discussions",
 };
+
+const ALL_KINDS: SearchKind[] = ["claims", "sources", "entities", "discussions"];
 
 export function CommandPalette() {
   const router = useRouter();
   const open = useUIStore((s) => s.paletteOpen);
   const close = useUIStore((s) => s.closePalette);
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Reset on open / close.
   useEffect(() => {
-    if (open && inputRef.current) inputRef.current.focus();
-    if (open) setQ("");
+    if (open) {
+      setQ("");
+      setDebouncedQ("");
+      setActiveIdx(0);
+      // focus on next tick so the input is mounted
+      setTimeout(() => inputRef.current?.focus(), 0);
+    }
   }, [open]);
 
-  const allItems: Item[] = useMemo(() => {
-    const navs: Item[] = NAV_SECTIONS.flatMap((s) =>
-      s.items.map((i) => ({
-        kind: "nav",
-        id: i.id,
-        label: i.label,
-        code: i.code,
-        group: s.label,
-        href: i.href,
-      })),
-    );
-    const debates: Item[] = ARGUS_DATA.RECENT.map((d) => ({
-      kind: "debate",
-      id: d.id,
-      label: d.title,
-      code: d.id,
-      group: "Debates",
-    }));
-    const personas: Item[] = ARGUS_DATA.PERSONAS.map((p) => ({
-      kind: "persona",
-      id: p.id,
-      label: `${p.name} — ${p.role}`,
-      code: p.flag,
-      group: "Personas",
-    }));
-    const ents: Item[] = ARGUS_DATA.KG_ENTITIES.map((e) => ({
-      kind: "entity",
-      id: e.id,
-      label: e.label,
-      code: e.type,
-      group: "Entities",
-    }));
-    return [...navs, ...debates, ...personas, ...ents];
-  }, []);
+  // 200ms debounce for the query string.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 200);
+    return () => clearTimeout(t);
+  }, [q]);
 
-  const filtered = useMemo(() => {
-    if (!q) return allItems.slice(0, 12);
-    const ql = q.toLowerCase();
-    return allItems
-      .filter((i) => i.label.toLowerCase().includes(ql) || i.code.toLowerCase().includes(ql))
-      .slice(0, 14);
-  }, [q, allItems]);
+  const ready = debouncedQ.length >= 2;
+
+  const search = useQuery({
+    queryKey: ["search", debouncedQ],
+    queryFn: () => api.search(debouncedQ, { kinds: ALL_KINDS, limit: 5 }),
+    enabled: open && ready,
+    staleTime: 5_000,
+    retry: 0,
+  });
+
+  // Flatten sections + a flat list for keyboard navigation.
+  const sections: Section[] = useMemo(() => {
+    const r = search.data?.results;
+    if (!r) return [];
+    return ALL_KINDS.map((k) => ({
+      kind: k,
+      label: KIND_LABELS[k],
+      hits: r[k] ?? [],
+    })).filter((s) => s.hits.length > 0);
+  }, [search.data]);
+
+  const flatHits: SearchHit[] = useMemo(
+    () => sections.flatMap((s) => s.hits),
+    [sections],
+  );
+
+  // Reset selection when results change.
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [debouncedQ, search.data]);
 
   if (!open) return null;
 
-  const onPick = (it: Item) => {
-    if (it.kind === "nav" && it.href) router.push(it.href);
+  const onPick = (hit: SearchHit) => {
+    router.push(hit.href);
     close();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      close();
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, Math.max(flatHits.length - 1, 0)));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === "Enter") {
+      const target = flatHits[activeIdx];
+      if (target) onPick(target);
+      return;
+    }
   };
 
   return (
@@ -113,7 +141,7 @@ export function CommandPalette() {
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Type to search — entities, debates, personas, screens"
+            placeholder="Search claims, sources, entities, debates"
             style={{
               flex: 1,
               background: "transparent",
@@ -123,17 +151,15 @@ export function CommandPalette() {
               fontFamily: "inherit",
               fontSize: 13,
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") close();
-              if (e.key === "Enter" && filtered[0]) onPick(filtered[0]);
-            }}
+            onKeyDown={onKeyDown}
           />
           <span className="muted tt-up" style={{ fontSize: 9 }}>
             ESC
           </span>
         </div>
-        <div style={{ maxHeight: 400, overflowY: "auto" }}>
-          {filtered.length === 0 && (
+
+        <div style={{ maxHeight: 420, overflowY: "auto" }}>
+          {!ready && (
             <div
               style={{
                 padding: 20,
@@ -142,37 +168,115 @@ export function CommandPalette() {
                 textAlign: "center",
               }}
             >
-              No matches
+              Type to search across claims, sources, entities, debates.
             </div>
           )}
-          {filtered.map((it, i) => (
-            <div
-              key={it.kind + it.id}
-              onClick={() => onPick(it)}
-              style={{
-                padding: "8px 14px",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                fontSize: 12,
-                cursor: "pointer",
-                borderBottom: "1px solid var(--line-1)",
-                background: i === 0 ? "var(--bg-3)" : "transparent",
-              }}
-            >
-              <span
-                className="tt-up"
-                style={{ color: "var(--amber)", fontSize: 9, minWidth: 60 }}
-              >
-                {it.kind}
-              </span>
-              <span style={{ flex: 1, color: "var(--ink-0)" }}>{it.label}</span>
-              <span className="muted" style={{ fontSize: 10 }}>
-                {it.code}
-              </span>
+
+          {ready && search.isLoading && (
+            <Skeleton rows={5} rowHeight={14} gap={10} />
+          )}
+
+          {ready && search.isError && (
+            <EmptyState
+              title="Search failed"
+              hint={`Could not reach the API. Tried "${debouncedQ}".`}
+              style={{ margin: 16 }}
+            />
+          )}
+
+          {ready &&
+            search.isSuccess &&
+            sections.length === 0 && (
+              <EmptyState
+                title="No matches"
+                hint={`Tried "${debouncedQ}" across all kinds.`}
+                style={{ margin: 16 }}
+              />
+            )}
+
+          {ready && search.isSuccess && sections.length > 0 && (
+            <div>
+              {(() => {
+                let runningIdx = 0;
+                return sections.map((section) => (
+                  <div key={section.kind}>
+                    <div
+                      className="tt-up"
+                      style={{
+                        padding: "8px 14px 4px",
+                        fontSize: 9,
+                        color: "var(--ink-3)",
+                        letterSpacing: "0.12em",
+                        background: "var(--bg-1)",
+                        borderTop: "1px solid var(--line-1)",
+                      }}
+                    >
+                      {section.label}
+                    </div>
+                    {section.hits.map((hit) => {
+                      const i = runningIdx++;
+                      const active = i === activeIdx;
+                      return (
+                        <div
+                          key={`${section.kind}:${hit.id}`}
+                          onMouseEnter={() => setActiveIdx(i)}
+                          onClick={() => onPick(hit)}
+                          style={{
+                            padding: "8px 14px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            fontSize: 12,
+                            cursor: "pointer",
+                            borderBottom: "1px solid var(--line-1)",
+                            background: active ? "var(--bg-3)" : "transparent",
+                          }}
+                        >
+                          <span
+                            className="tt-up"
+                            style={{
+                              color: "var(--amber)",
+                              fontSize: 9,
+                              minWidth: 60,
+                            }}
+                          >
+                            {section.kind}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div
+                              style={{
+                                color: "var(--ink-0)",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {hit.label}
+                            </div>
+                            {hit.snippet && (
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  color: "var(--ink-3)",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {hit.snippet}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ));
+              })()}
             </div>
-          ))}
+          )}
         </div>
+
         <div
           style={{
             padding: "6px 14px",
@@ -187,6 +291,11 @@ export function CommandPalette() {
           <span>↵ OPEN</span>
           <span>↑↓ NAVIGATE</span>
           <span>ESC CLOSE</span>
+          {ready && search.isSuccess && (
+            <span style={{ marginLeft: "auto" }}>
+              {search.data?.total ?? 0} HITS
+            </span>
+          )}
         </div>
       </div>
     </div>

@@ -20,6 +20,7 @@ class PersonaOut(BaseModel):
     redlines: list[str] = []
     bias: str | None = None
     model_assignment: str | None = None
+    color: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -32,6 +33,7 @@ class PersonaCreate(BaseModel):
     redlines: list[str] = Field(default_factory=list)
     bias: str | None = None
     model_assignment: str | None = None
+    color: str | None = None
 
 
 class PersonaUpdate(BaseModel):
@@ -42,6 +44,7 @@ class PersonaUpdate(BaseModel):
     redlines: list[str] | None = None
     bias: str | None = None
     model_assignment: str | None = None
+    color: str | None = None
 
 
 def _to_out(row: PersonaModel) -> PersonaOut:
@@ -54,6 +57,7 @@ def _to_out(row: PersonaModel) -> PersonaOut:
         redlines=list(getattr(row, "redlines", []) or []),
         bias=getattr(row, "bias", None),
         model_assignment=getattr(row, "model_assignment", None),
+        color=getattr(row, "color", None),
         created_at=row.created_at,
         updated_at=getattr(row, "updated_at", None),
     )
@@ -99,6 +103,7 @@ async def create_persona(body: PersonaCreate) -> PersonaOut:
             redlines=list(body.redlines),
             bias=body.bias,
             model_assignment=body.model_assignment,
+            color=body.color,
         )
         session.add(row)
         await session.flush()

@@ -27,6 +27,7 @@ class Persona(BaseModel):
     redlines: list[str] = Field(default_factory=list)
     bias: str | None = None
     model_assignment: str | None = None
+    color: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

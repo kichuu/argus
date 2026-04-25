@@ -6,7 +6,6 @@ import { AsciiSpinner } from "@/components/ui/AsciiSpinner";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
-import { CiteChip } from "@/components/ui/CiteChip";
 import { Dot } from "@/components/ui/Dot";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorBox } from "@/components/ui/ErrorBox";
@@ -16,93 +15,63 @@ import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { Segmented } from "@/components/ui/Segmented";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { useTypewriter } from "@/hooks/useTypewriter";
-import { api } from "@/lib/api";
-import { ARGUS_DATA, type Persona, type TranscriptMsg } from "@/mock/data";
+import { api, type PersonaSummary } from "@/lib/api";
+import type { Persona } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
 
-function Message({
-  m,
-  p,
-  stream,
-  pById,
-}: {
-  m: TranscriptMsg;
-  p: Persona;
-  stream: boolean;
-  pById: (id: string) => Persona | undefined;
-}) {
-  const display = useTypewriter(m.text, stream, 6);
-  const isStreaming = stream && display.length < m.text.length;
-  return (
-    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line-1)" }}>
-      <div className="row gap-3" style={{ alignItems: "flex-start" }}>
-        <PersonaAvatar p={p} size={28} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="row gap-2" style={{ alignItems: "baseline", flexWrap: "wrap" }}>
-            <span style={{ color: p.colorVar, fontWeight: 600, fontSize: 12 }}>{p.name}</span>
-            <span className="tt-up muted" style={{ fontSize: 9 }}>
-              {p.role}
-            </span>
-            <div style={{ flex: 1 }} />
-            <span className="tab muted" style={{ fontSize: 9 }}>
-              {m.t}
-            </span>
-            <Chip tone="amber" style={{ fontSize: 9 }}>
-              R{m.roundN}·{m.round}
-            </Chip>
-          </div>
-          {m.references && m.references.length > 0 && (() => {
-            const ref = pById(m.references[0]);
-            return ref ? (
-              <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
-                ↪ replying to <span style={{ color: ref.colorVar }}>{ref.name}</span>
-              </div>
-            ) : null;
-          })()}
-          {m.challenge && (() => {
-            const ch = pById(m.challenge);
-            return ch ? (
-              <div style={{ fontSize: 10, marginTop: 4, color: "var(--red)" }}>
-                ⚠ challenging <span style={{ color: ch.colorVar }}>{ch.name}</span>
-              </div>
-            ) : null;
-          })()}
-          <div
-            style={{
-              fontSize: 13,
-              color: "var(--ink-0)",
-              marginTop: 6,
-              lineHeight: 1.55,
-              fontFamily: "'IBM Plex Sans', 'Inter', system-ui, sans-serif",
-            }}
-          >
-            {display}
-            {isStreaming && <span className="caret"></span>}
-            {!isStreaming && (m.cites || []).map((c) => <CiteChip key={c.n} {...c} />)}
-          </div>
-          {!isStreaming && (
-            <div className="row gap-3" style={{ marginTop: 8, alignItems: "center" }}>
-              <Bar value={m.confidence} label="CONF" width={60} color="var(--green)" showVal />
-              <span className="muted tt-up" style={{ fontSize: 9 }}>
-                · {(m.cites || []).length} cite{(m.cites || []).length === 1 ? "" : "s"}
-              </span>
-              <div style={{ flex: 1 }} />
-              <span className="muted" style={{ fontSize: 10, cursor: "pointer" }}>
-                👍 ✕
-              </span>
-              <span className="muted" style={{ fontSize: 10, cursor: "pointer" }}>
-                ⚠ challenge
-              </span>
-              <span className="muted" style={{ fontSize: 10, cursor: "pointer" }}>
-                🔖 pin
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+const _PALETTE = [
+  "var(--p-1)",
+  "var(--p-2)",
+  "var(--p-3)",
+  "var(--p-4)",
+  "var(--p-5)",
+  "var(--p-6)",
+  "var(--p-7)",
+];
+function colorForFrame(frame: string): string {
+  let h = 0;
+  for (let i = 0; i < frame.length; i++) h = (h + frame.charCodeAt(i)) | 0;
+  return _PALETTE[Math.abs(h) % _PALETTE.length];
+}
+
+// PersonaAvatar only reads `colorVar` and `initials`. Build a minimal Persona
+// shape from a live PersonaSummary so we can keep the existing UI primitives.
+type LivePersona = {
+  id: string;
+  name: string;
+  colorVar: string;
+  initials: string;
+  frame: string;
+};
+
+function toLivePersona(s: PersonaSummary & { color?: string | null }): LivePersona {
+  const frame = s.frame ?? s.id;
+  const colorVar = (s.color && s.color.length > 0) ? s.color : colorForFrame(frame);
+  const initials = (frame[0] ?? "?").toUpperCase();
+  return { id: s.id, name: frame, colorVar, initials, frame };
+}
+
+// Avatar adapter: PersonaAvatar's prop type is `Persona` but it only touches
+// `colorVar` and `initials`. We synthesize a compatible object.
+function avatarPersona(lp: LivePersona): Persona {
+  return {
+    id: lp.id,
+    name: lp.name,
+    role: "",
+    country: "",
+    flag: "",
+    color: lp.colorVar,
+    colorVar: lp.colorVar,
+    initials: lp.initials,
+    bias: "",
+    beliefs: [],
+    redlines: [],
+    model: "",
+    memorySize: "",
+    temperature: 0,
+    aggression: 0,
+    citationStrictness: 0,
+  };
 }
 
 function PersonaRefGraph({
@@ -110,16 +79,16 @@ function PersonaRefGraph({
   personas,
 }: {
   refs: [string, string][];
-  personas: Persona[];
+  personas: LivePersona[];
 }) {
   const W = 280;
   const H = 200;
   const cx = W / 2;
   const cy = H / 2;
   const R = 70;
-  const positions: Record<string, { x: number; y: number; p: Persona }> = {};
+  const positions: Record<string, { x: number; y: number; p: LivePersona }> = {};
   personas.forEach((p, i) => {
-    const a = (i / personas.length) * Math.PI * 2 - Math.PI / 2;
+    const a = (i / Math.max(1, personas.length)) * Math.PI * 2 - Math.PI / 2;
     positions[p.id] = { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a), p };
   });
   return (
@@ -174,12 +143,8 @@ function PersonaRefGraph({
 
 export function DebateRoom() {
   const router = useRouter();
-  const D = ARGUS_DATA;
-  const T = D.TRANSCRIPT;
   const transcriptRef = useRef<HTMLDivElement>(null);
 
-  const idx = useDebateStore((s) => s.idx);
-  const advance = useDebateStore((s) => s.advance);
   const stepBack = useDebateStore((s) => s.stepBack);
   const paused = useDebateStore((s) => s.paused);
   const setPaused = useDebateStore((s) => s.setPaused);
@@ -190,6 +155,23 @@ export function DebateRoom() {
   const [filterPersona, setFilterPersona] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
+  const personasQuery = useQuery({
+    queryKey: ["personas-catalog"],
+    queryFn: api.personas,
+    staleTime: 60_000,
+    retry: 0,
+  });
+
+  const personaMap = useMemo(() => {
+    const m = new Map<string, LivePersona>();
+    (personasQuery.data ?? []).forEach((p) => {
+      m.set(p.id, toLivePersona(p as PersonaSummary & { color?: string | null }));
+    });
+    return m;
+  }, [personasQuery.data]);
+
+  const personasList = useMemo(() => Array.from(personaMap.values()), [personaMap]);
+
   const liveMessages = useQuery({
     queryKey: ["discussion-messages", discussionId],
     queryFn: () => api.discussionMessages(discussionId as string),
@@ -199,55 +181,65 @@ export function DebateRoom() {
     staleTime: 30_000,
   });
   const liveData = liveMessages.data;
-  const isLive = !!discussionId && (liveData?.length ?? 0) > 0;
-  const showMockChip = !discussionId || liveMessages.isError || (liveData?.length ?? 0) === 0;
-
-  useEffect(() => {
-    if (paused) return;
-    if (idx >= T.length) return;
-    const id = setTimeout(() => advance(T.length), 4200 / speed);
-    return () => clearTimeout(id);
-  }, [idx, paused, speed, T.length, advance]);
+  const messageCount = liveData?.length ?? 0;
+  const hasLive = !!discussionId && messageCount > 0;
 
   useEffect(() => {
     if (transcriptRef.current) transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
-  }, [idx]);
+  }, [messageCount]);
 
-  const visible = T.slice(0, idx);
-  const filtered = filterPersona ? visible.filter((m) => m.persona === filterPersona) : visible;
-  const searched = search
-    ? filtered.filter((m) => m.text.toLowerCase().includes(search.toLowerCase()))
-    : filtered;
+  const pById = (id: string | undefined | null): LivePersona | undefined =>
+    id ? personaMap.get(id) : undefined;
 
-  const pById = (id: string) => D.PERSONAS.find((p) => p.id === id);
+  const filteredMessages = useMemo(() => {
+    const all = liveData ?? [];
+    const byPersona = filterPersona
+      ? all.filter((m) => (m.persona_id ?? m.agent_id) === filterPersona)
+      : all;
+    const bySearch = search
+      ? byPersona.filter((m) => (m.content ?? "").toLowerCase().includes(search.toLowerCase()))
+      : byPersona;
+    return bySearch;
+  }, [liveData, filterPersona, search]);
 
-  const convergence = Math.min(0.78, (idx / T.length) * 0.78);
-  const round = visible.length ? visible[visible.length - 1].round : "DRAFT";
-  const roundN = visible.length ? visible[visible.length - 1].roundN : 1;
+  // Convergence is currently unmodeled live — derive a soft proxy from message
+  // count so the UI stays alive without inventing data.
+  const convergence = Math.min(0.78, messageCount === 0 ? 0 : Math.min(messageCount, 12) / 12 * 0.78);
+  const round: "DRAFT" | "CRITIQUE" | "REBUT" | "VOTE" =
+    messageCount >= 9 ? "VOTE" : messageCount >= 6 ? "REBUT" : messageCount >= 3 ? "CRITIQUE" : "DRAFT";
+  const roundN = Math.max(1, Math.min(4, Math.ceil(messageCount / 3) || 1));
 
   const refs = useMemo(() => {
     const r: [string, string][] = [];
-    visible.forEach((m) => {
-      (m.references || []).forEach((to) => r.push([m.persona, to]));
-      if (m.challenge) r.push([m.persona, m.challenge]);
+    const all = liveData ?? [];
+    // Build a simple "previous-speaker" reference graph from live message order.
+    let lastBy: string | null = null;
+    all.forEach((m) => {
+      const pid = m.persona_id ?? m.agent_id ?? null;
+      if (pid && lastBy && pid !== lastBy) r.push([pid, lastBy]);
+      if (pid) lastBy = pid;
     });
     return r;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx]);
+  }, [liveData]);
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
         code="06·DEBATE"
         title="Debate Room"
-        breadcrumb={`// d-2026-04-25-01 · "Will the PRC escalate to a customs quarantine of Taiwanese ports within 12 months?"`}
+        breadcrumb={
+          discussionId
+            ? `// ${discussionId} · live discussion`
+            : "// no debate loaded"
+        }
         right={
           <div className="row gap-2">
-            {showMockChip && <Chip tone="amber">offline · mock</Chip>}
-            {isLive && <Chip tone="green">live · {liveData?.length ?? 0} msgs</Chip>}
-            <Chip tone="amber">
-              <Dot tone="amber" pulse /> ROUND {roundN} · {round}
-            </Chip>
+            {hasLive && <Chip tone="green">live · {messageCount} msgs</Chip>}
+            {hasLive && (
+              <Chip tone="amber">
+                <Dot tone="amber" pulse /> ROUND {roundN} · {round}
+              </Chip>
+            )}
             <Btn ghost active={paused} onClick={() => setPaused(!paused)}>
               {paused ? "▶ RESUME" : "⏸ PAUSE"}
             </Btn>
@@ -282,11 +274,16 @@ export function DebateRoom() {
             overflow: "hidden",
           }}
         >
-          <SectionHeader id="P" title="Cast" sub="7 personas" />
+          <SectionHeader id="P" title="Cast" sub={`${personasList.length} personas`} />
           <div className="col" style={{ overflowY: "auto" }}>
-            {D.PERSONAS.map((p) => {
-              const speaking = visible.length && visible[visible.length - 1].persona === p.id;
-              const msgs = visible.filter((m) => m.persona === p.id).length;
+            {personasList.map((p) => {
+              const lastPid = liveData && liveData.length
+                ? (liveData[liveData.length - 1].persona_id ?? liveData[liveData.length - 1].agent_id)
+                : undefined;
+              const speaking = lastPid === p.id;
+              const msgs = (liveData ?? []).filter(
+                (m) => (m.persona_id ?? m.agent_id) === p.id,
+              ).length;
               const isFilter = filterPersona === p.id;
               return (
                 <div
@@ -311,7 +308,7 @@ export function DebateRoom() {
                         : "2px solid transparent",
                   }}
                 >
-                  <PersonaAvatar p={p} size={26} />
+                  <PersonaAvatar p={avatarPersona(p)} size={26} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
@@ -325,13 +322,21 @@ export function DebateRoom() {
                       {p.name}
                     </div>
                     <div style={{ fontSize: 9, color: "var(--ink-2)" }}>
-                      {p.flag} {msgs} msg{msgs === 1 ? "" : "s"}
+                      {msgs} msg{msgs === 1 ? "" : "s"}
                     </div>
                   </div>
                   {speaking ? <Dot tone="green" pulse /> : null}
                 </div>
               );
             })}
+            {personasList.length === 0 && !personasQuery.isLoading && (
+              <div
+                style={{ padding: 12, fontSize: 10, color: "var(--ink-3)" }}
+                className="muted"
+              >
+                no personas in catalogue
+              </div>
+            )}
           </div>
           <div style={{ padding: 12, borderTop: "1px solid var(--line-2)" }}>
             <Btn ghost style={{ width: "100%" }}>
@@ -367,7 +372,7 @@ export function DebateRoom() {
               ) : null;
             })()}
             <span className="muted tt-up" style={{ fontSize: 9 }}>
-              {searched.length} / {visible.length} msgs
+              {filteredMessages.length} / {messageCount} msgs
             </span>
           </div>
 
@@ -380,18 +385,21 @@ export function DebateRoom() {
                 onRetry={() => liveMessages.refetch()}
                 style={{ margin: 16 }}
               />
-            ) : !discussionId && (liveData?.length ?? 0) === 0 && T.length === 0 ? (
+            ) : !discussionId || messageCount === 0 ? (
               <EmptyState
-                title="No debate loaded"
-                hint="Launch a deliberation from Home to populate the transcript"
+                title="No live debate"
+                hint="Launch a debate from Home to see agent messages stream in here."
                 cta={{ label: "GO HOME", onClick: () => router.push("/") }}
                 style={{ margin: 16 }}
               />
-            ) : isLive ? (
+            ) : (
               <>
-                {(liveData ?? []).map((m, i) => {
+                {filteredMessages.map((m, i) => {
                   const personaId = m.persona_id ?? m.agent_id ?? "";
                   const p = pById(personaId);
+                  const evidenceCount = Array.isArray(m.evidence_refs)
+                    ? m.evidence_refs.length
+                    : 0;
                   return (
                     <div
                       key={(m.id as string | undefined) ?? i}
@@ -401,7 +409,7 @@ export function DebateRoom() {
                       }}
                     >
                       <div className="row gap-3" style={{ alignItems: "flex-start" }}>
-                        {p && <PersonaAvatar p={p} size={28} />}
+                        {p && <PersonaAvatar p={avatarPersona(p)} size={28} />}
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             className="row gap-2"
@@ -438,10 +446,10 @@ export function DebateRoom() {
                           >
                             {m.content ?? ""}
                           </div>
-                          {Array.isArray(m.evidence_refs) && m.evidence_refs.length > 0 && (
+                          {evidenceCount > 0 && (
                             <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
-                              · {m.evidence_refs.length} evidence ref
-                              {m.evidence_refs.length === 1 ? "" : "s"}
+                              · {evidenceCount} evidence ref
+                              {evidenceCount === 1 ? "" : "s"}
                             </div>
                           )}
                         </div>
@@ -452,46 +460,6 @@ export function DebateRoom() {
                 {liveMessages.isFetching && (
                   <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
                     <AsciiSpinner /> polling...
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                {searched.map((m, i) => {
-                  const p = pById(m.persona);
-                  if (!p) return null;
-                  const isLast = i === searched.length - 1 && idx <= T.length;
-                  const showStream = isLast && !paused;
-                  return (
-                    <Message
-                      key={`${m.persona}-${i}-${m.t}`}
-                      m={m}
-                      p={p}
-                      stream={showStream}
-                      pById={pById}
-                    />
-                  );
-                })}
-                {!paused && idx < T.length && (
-                  <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
-                    <AsciiSpinner /> awaiting next turn...
-                  </div>
-                )}
-                {idx >= T.length && (
-                  <div
-                    style={{
-                      padding: 24,
-                      textAlign: "center",
-                      color: "var(--ink-2)",
-                      fontSize: 11,
-                    }}
-                  >
-                    ─── debate concluded · synthesizer engaged ───
-                    <div style={{ marginTop: 12 }}>
-                      <Btn primary onClick={() => router.push("/synthesis")}>
-                        VIEW SYNTHESIS →
-                      </Btn>
-                    </div>
                   </div>
                 )}
               </>
@@ -577,7 +545,7 @@ export function DebateRoom() {
             sub="who-cites-whom"
             style={{ flexShrink: 0, height: 220 }}
           >
-            <PersonaRefGraph refs={refs} personas={D.PERSONAS} />
+            <PersonaRefGraph refs={refs} personas={personasList} />
           </Panel>
 
           <Panel id="W" title="World State" sub="kg snapshot · Δ this round" style={{ flex: 1 }}>

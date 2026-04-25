@@ -1,6 +1,9 @@
 "use client";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Dot } from "@/components/ui/Dot";
+import { api } from "@/lib/api";
 import { useUIStore } from "@/store/ui";
 
 export type NavItem = { id: string; code: string; label: string; href: string };
@@ -42,10 +45,28 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+function compact(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const collapsed = useUIStore((s) => s.sidebarCollapsed);
   const toggle = useUIStore((s) => s.toggleSidebar);
+
+  const sysQ = useQuery({
+    queryKey: ["health-system"],
+    queryFn: api.systemStatus,
+    refetchInterval: 10_000,
+    retry: 0,
+    staleTime: 10_000,
+  });
+
+  const apiOnline = sysQ.isSuccess;
+  const db = sysQ.data?.db;
 
   return (
     <div
@@ -98,7 +119,7 @@ export function Sidebar() {
               argus
             </span>
             <span className="tt-up" style={{ color: "var(--ink-3)", fontSize: 9 }}>
-              WORLD AWARENESS v0.42
+              WORLD AWARENESS v{sysQ.data?.api_version ?? "—"}
             </span>
           </div>
         )}
@@ -158,6 +179,36 @@ export function Sidebar() {
           </div>
         ))}
       </div>
+
+      {!collapsed && (
+        <div
+          style={{
+            padding: "8px 14px",
+            borderTop: "1px solid var(--line-2)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 10,
+            color: "var(--ink-2)",
+          }}
+          title={
+            apiOnline
+              ? "API online"
+              : sysQ.isLoading
+                ? "Checking API…"
+                : "API unreachable"
+          }
+        >
+          <Dot tone={apiOnline ? "green" : sysQ.isLoading ? "ink" : "red"} pulse={!apiOnline && !sysQ.isLoading} />
+          <span className="tab" style={{ flex: 1, fontFeatureSettings: "'tnum'" }}>
+            {db
+              ? `${compact(db.claims_total)} cl · ${compact(db.sources_total)} src · ${compact(db.entities_total)} ent`
+              : apiOnline
+                ? "—"
+                : "offline"}
+          </span>
+        </div>
+      )}
 
       <div
         onClick={toggle}

@@ -7,14 +7,17 @@ No real network calls are made.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from argus_agents import master as master_module
 from argus_agents.critic import _CriticReport, _CriticVerdict
 from argus_agents.graph import DiscussionGraph
-from argus_agents.master import _PersonaProposal, _PersonaSlate
+from argus_agents.master import _PersonaSelection
 from argus_agents.synthesizer import _ClaimSlate, _ProposedClaim
 from argus_extraction.providers import Provider
 from pydantic import BaseModel
@@ -116,27 +119,77 @@ def retriever(evidence_spans: list[_FakeSpan]) -> _FakeRetriever:
 
 
 @pytest.fixture
-def master_provider() -> _ScriptedProvider:
-    slate = _PersonaSlate(
-        personas=[
-            _PersonaProposal(
-                frame="skeptical empiricist",
-                description="Demands measurable, replicable claims.",
-                knowledge_emphasis=["statistics", "study design"],
-            ),
-            _PersonaProposal(
-                frame="regulator viewpoint",
-                description="Reads evidence through compliance and accountability.",
-                knowledge_emphasis=["policy", "compliance"],
-            ),
-            _PersonaProposal(
-                frame="historical analogue analyst",
-                description="Looks for precedent and pattern.",
-                knowledge_emphasis=["history", "case studies"],
-            ),
-        ]
+def db_persona_rows() -> list[SimpleNamespace]:
+    """Three persona rows that will live in the fake DB session."""
+    now = datetime.now(UTC)
+
+    def _row(frame: str, description: str, emphasis: list[str]) -> SimpleNamespace:
+        return SimpleNamespace(
+            id=uuid4(),
+            frame=frame,
+            description=description,
+            knowledge_emphasis=emphasis,
+            temperature=0.7,
+            redlines=[],
+            bias=None,
+            model_assignment=None,
+            color=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    return [
+        _row(
+            "skeptical empiricist",
+            "Demands measurable, replicable claims.",
+            ["statistics", "study design"],
+        ),
+        _row(
+            "regulator viewpoint",
+            "Reads evidence through compliance and accountability.",
+            ["policy", "compliance"],
+        ),
+        _row(
+            "historical analogue analyst",
+            "Looks for precedent and pattern.",
+            ["history", "case studies"],
+        ),
+    ]
+
+
+@pytest.fixture
+def master_provider(db_persona_rows: list[SimpleNamespace]) -> _ScriptedProvider:
+    selection = _PersonaSelection(
+        chosen_persona_ids=[str(r.id) for r in db_persona_rows]
     )
-    return _ScriptedProvider({_PersonaSlate: slate})
+    return _ScriptedProvider({_PersonaSelection: selection})
+
+
+@pytest.fixture(autouse=True)
+def _stub_master_session(
+    monkeypatch: pytest.MonkeyPatch, db_persona_rows: list[SimpleNamespace]
+) -> None:
+    """Replace `session_scope` inside master.py with one that yields fake rows."""
+
+    class _FakeResult:
+        def __init__(self, items: list) -> None:
+            self._items = items
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return list(self._items)
+
+    class _FakeSession:
+        async def execute(self, stmt):
+            return _FakeResult(db_persona_rows)
+
+    @asynccontextmanager
+    async def _scope():
+        yield _FakeSession()
+
+    monkeypatch.setattr(master_module, "session_scope", _scope)
 
 
 @pytest.fixture

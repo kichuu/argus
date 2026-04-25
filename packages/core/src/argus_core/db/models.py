@@ -110,6 +110,7 @@ class PersonaModel(Base):
     )
     bias: Mapped[str | None] = mapped_column(String(512), nullable=True)
     model_assignment: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    color: Mapped[str | None] = mapped_column(String(24), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utc_now, onupdate=_utc_now

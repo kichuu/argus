@@ -86,6 +86,7 @@ def _make_persona_row(**overrides):
         "redlines": [],
         "bias": None,
         "model_assignment": None,
+        "color": None,
         "created_at": datetime.now(UTC),
         "updated_at": datetime.now(UTC),
     }
@@ -304,6 +305,29 @@ async def test_patch_persona_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     # Other fields untouched.
     assert body["frame"] == row.frame
     assert body["knowledge_emphasis"] == list(row.knowledge_emphasis)
+
+
+@pytest.mark.asyncio
+async def test_patch_persona_color_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    from argus_core.db.models import PersonaModel
+
+    row = _make_persona_row()
+    session = FakeSession(get_map={(PersonaModel, row.id): row})
+    monkeypatch.setattr(personas_route, "session_scope", _make_session_scope(session))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.patch(
+            f"/personas/{row.id}",
+            json={"color": "var(--p-3)"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["color"] == "var(--p-3)"
+    # Other fields untouched.
+    assert body["frame"] == row.frame
+    assert body["temperature"] == row.temperature
 
 
 # ---------- /entities/{id}/relations tests ----------

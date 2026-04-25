@@ -2,7 +2,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Btn } from "@/components/ui/Btn";
-import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { KV } from "@/components/ui/KV";
 import { MockBadge } from "@/components/ui/MockBadge";

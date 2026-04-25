@@ -173,6 +173,54 @@ export type MetricsEvals = {
   last_run: string | null;
 };
 
+export type SearchHit = {
+  id: string;
+  label: string;
+  snippet: string;
+  href: string;
+};
+
+export type SearchKind = "claims" | "sources" | "entities" | "discussions";
+
+export type SearchResults = {
+  q: string;
+  results: {
+    claims: SearchHit[];
+    sources: SearchHit[];
+    entities: SearchHit[];
+    discussions: SearchHit[];
+  };
+  total: number;
+};
+
+export type SystemStatus = {
+  api_version: string;
+  scheduler: { running: boolean; interval_seconds: number };
+  db: {
+    claims_total: number;
+    claims_24h: number;
+    sources_total: number;
+    sources_24h: number;
+    entities_total: number;
+    discussions_total: number;
+    discussions_running: number;
+  };
+  qdrant: { collection: string; points_count: number | null; available: boolean };
+  age: { graph: string; node_count: number | null; available: boolean };
+  last_ingest_at: string | null;
+};
+
+export type ActivityEvent = {
+  id: string;
+  kind: "claim" | "source" | "discussion";
+  title: string;
+  summary: string;
+  ts: string;
+  href: string;
+};
+
+export type ActivityResponse = { events: ActivityEvent[] };
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
@@ -263,4 +311,23 @@ export const api = {
     return request<MetricsTraces>(`/metrics/traces${qs}`);
   },
   metricsEvals: () => request<MetricsEvals>("/metrics/evals"),
+  search: (
+    q: string,
+    opts?: { kinds?: SearchKind[]; limit?: number },
+  ) => {
+    const params = new URLSearchParams();
+    params.set("q", q);
+    if (opts?.kinds && opts.kinds.length > 0) {
+      params.set("kinds", opts.kinds.join(","));
+    }
+    if (opts?.limit != null) {
+      params.set("limit", String(opts.limit));
+    }
+    return request<SearchResults>(`/search?${params.toString()}`);
+  },
+  systemStatus: () => request<SystemStatus>("/health/system"),
+  activity: (opts?: { limit?: number }) => {
+    const qs = opts?.limit != null ? `?limit=${opts.limit}` : "";
+    return request<ActivityResponse>(`/activity${qs}`);
+  },
 };

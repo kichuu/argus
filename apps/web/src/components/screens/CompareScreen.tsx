@@ -3,16 +3,12 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Bar } from "@/components/ui/Bar";
 import { Chip } from "@/components/ui/Chip";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { MockBadge } from "@/components/ui/MockBadge";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { api, type ClaimSummary, type DiscussionSummary } from "@/lib/api";
 import { apiStatus } from "@/lib/api-status";
-
-const MOCK_DEBATES = [
-  { title: "Apr 25, 2026", quar: 0.42, blo: 0.18, kin: 0.07, status: "current", color: "var(--amber)" },
-  { title: "Mar 22, 2026", quar: 0.31, blo: 0.14, kin: 0.05, status: "month ago", color: "var(--p-2)" },
-];
 
 type LooseDiscussion = DiscussionSummary & {
   affected_entities?: string[];
@@ -23,16 +19,22 @@ type LooseClaim = ClaimSummary & {
   status?: string;
 };
 
+type ClaimDist = {
+  likely_true: number;
+  contested: number;
+  unverified: number;
+};
+
 type LiveDebate = {
   key: string;
   title: string;
   status: string;
   color: string;
   topic: string;
-  quar: number;
-  blo: number;
-  kin: number;
+  meanConfidence: number;
   claimsCount: number;
+  messagesCount: number;
+  dist: ClaimDist;
   affectedEntities: string[];
   newEntities: string[];
 };
@@ -46,19 +48,23 @@ function formatDebateTitle(d: LooseDiscussion): string {
   return `${m[dt.getUTCMonth()]} ${dt.getUTCDate()}, ${dt.getUTCFullYear()}`;
 }
 
-function meanConfidence(claims: LooseClaim[], onlyLikelyTrue: boolean): number {
-  const filtered = onlyLikelyTrue
-    ? claims.filter((c) => c.status === "likely_true" && typeof c.confidence === "number")
-    : claims.filter((c) => typeof c.confidence === "number");
-  if (filtered.length === 0) return 0;
-  const sum = filtered.reduce((acc, c) => acc + (c.confidence ?? 0), 0);
-  return sum / filtered.length;
+function meanConfidence(claims: LooseClaim[]): number {
+  const vals = claims
+    .map((c) => c.confidence)
+    .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
+  if (vals.length === 0) return 0;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-function deriveProbability(claims: LooseClaim[]): number {
-  const lt = meanConfidence(claims, true);
-  if (lt > 0) return lt;
-  return meanConfidence(claims, false);
+function bucketize(claims: LooseClaim[]): ClaimDist {
+  const d: ClaimDist = { likely_true: 0, contested: 0, unverified: 0 };
+  for (const c of claims) {
+    const s = c.status;
+    if (s === "likely_true") d.likely_true += 1;
+    else if (s === "contested") d.contested += 1;
+    else d.unverified += 1;
+  }
+  return d;
 }
 
 export function CompareScreen() {
@@ -90,23 +96,28 @@ export function CompareScreen() {
     })),
   });
 
+  const messagesQueries = useQueries({
+    queries: completed.map((d) => ({
+      queryKey: ["discussion-messages", d.id],
+      queryFn: () => api.discussionMessages(d.id),
+      staleTime: 60_000,
+      retry: 0,
+    })),
+  });
+
   const status = apiStatus(discussionsQuery);
   const haveLive = completed.length >= 2;
 
-  // Build live debates with derived metrics.
   const liveDebates = useMemo<LiveDebate[]>(() => {
     if (!haveLive) return [];
     const colors = ["var(--amber)", "var(--p-2)"];
     const statuses = ["current", "prior"];
     const claimsByIdx = claimsQueries.map((q) => (q.data ?? []) as LooseClaim[]);
+    const messagesByIdx = messagesQueries.map((q) => q.data ?? []);
     const entitiesByIdx = completed.map((d) => d.affected_entities ?? d.entities ?? []);
 
     return completed.map((d, i) => {
       const claims = claimsByIdx[i];
-      const probability = deriveProbability(claims);
-      // Distribute remaining mass roughly across blo/kin like the mock visual.
-      const blo = Math.max(0, Math.min(1, probability * 0.42));
-      const kin = Math.max(0, Math.min(1, probability * 0.16));
       const sharedTopic =
         completed.length === 2 && completed[0].topic && completed[0].topic === completed[1].topic;
       const otherIdx = i === 0 ? 1 : 0;
@@ -123,17 +134,18 @@ export function CompareScreen() {
         status: statuses[i] ?? "—",
         color: colors[i] ?? "var(--p-3)",
         topic: d.topic ?? "—",
-        quar: probability,
-        blo,
-        kin,
+        meanConfidence: meanConfidence(claims),
         claimsCount: claims.length,
+        messagesCount: messagesByIdx[i].length,
+        dist: bucketize(claims),
         affectedEntities: entitiesByIdx[i] ?? [],
         newEntities,
       };
     });
-  }, [haveLive, completed, claimsQueries]);
+  }, [haveLive, completed, claimsQueries, messagesQueries]);
 
   const claimsLoading = claimsQueries.some((q) => q.isLoading);
+  const messagesLoading = messagesQueries.some((q) => q.isLoading);
 
   if (discussionsQuery.isLoading) {
     return (
@@ -144,122 +156,27 @@ export function CompareScreen() {
     );
   }
 
-  // Fall back to the static mock when fewer than two completed discussions exist.
   if (!haveLive) {
     return (
       <div className="col grow" style={{ overflow: "hidden" }}>
         <ScreenHeader
           code="10·COMPARE"
           title="Compare Mode"
-          breadcrumb="// 2 debates · TW Strait Apr-25 vs TW Strait Mar-22"
-          right={<MockBadge online={false} loading={status.loading} />}
+          breadcrumb={`// ${completed.length} completed · need 2`}
+          right={<MockBadge online={status.online} loading={status.loading} />}
         />
-        <div className="grow row" style={{ overflow: "hidden" }}>
-          {MOCK_DEBATES.map((d, i) => {
-            const dist: [string, number][] = [
-              ["Quarantine", d.quar],
-              ["Blockade", d.blo],
-              ["Kinetic", d.kin],
-              ["Status quo", 1 - d.quar - d.blo - d.kin],
-            ];
-            return (
-              <div
-                key={d.title}
-                className="grow col"
-                style={{
-                  borderRight: i === 0 ? "1px solid var(--line-2)" : "none",
-                  padding: 24,
-                  overflowY: "auto",
-                }}
-              >
-                <div className="row gap-3" style={{ alignItems: "baseline" }}>
-                  <div style={{ fontSize: 22, fontWeight: 600, color: d.color }}>{d.title}</div>
-                  <Chip tone="amber">{d.status}</Chip>
-                </div>
-                <div style={{ fontSize: 13, color: "var(--ink-1)", marginTop: 4, lineHeight: 1.5 }}>
-                  Will the PRC escalate to a customs quarantine of Taiwanese ports within 12 months?
-                </div>
-
-                <div style={{ marginTop: 24, padding: 18, border: "1px solid var(--line-2)" }}>
-                  <div className="tt-up muted" style={{ fontSize: 9 }}>
-                    QUARANTINE PROBABILITY
-                  </div>
-                  <div className="tab" style={{ fontSize: 48, color: d.color, fontWeight: 600 }}>
-                    {d.quar.toFixed(2)}
-                  </div>
-                  {i === 0 && (
-                    <div style={{ fontSize: 11, color: "var(--green)" }}>
-                      +0.11 vs prior · 35% relative ↑
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ marginTop: 16 }}>
-                  <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 8 }}>
-                    SCENARIO DISTRIBUTION
-                  </div>
-                  {dist.map(([l, p]) => (
-                    <div
-                      key={l}
-                      className="row gap-2"
-                      style={{ alignItems: "center", padding: "4px 0" }}
-                    >
-                      <span
-                        className="tt-up"
-                        style={{ fontSize: 9, color: "var(--ink-2)", minWidth: 90 }}
-                      >
-                        {l}
-                      </span>
-                      <Bar value={p} max={1} width={200} color={d.color} />
-                      <span className="tab" style={{ fontSize: 11, color: "var(--ink-1)" }}>
-                        {p.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: 24 }}>
-                  <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 8 }}>
-                    NEW ENTITIES SINCE{i === 0 && " MAR-22"}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--ink-1)", lineHeight: 1.7 }}>
-                    {i === 0 ? (
-                      <>
-                        · Joint Sword 2026-A
-                        <br />· ROCS Hai Kun
-                        <br />· INDOPACOM Status FOXTROT
-                      </>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 24 }}>
-                  <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 8 }}>
-                    CAST DELTA
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--ink-1)" }}>
-                    {i === 0 ? (
-                      <>
-                        <span className="green">+ Ishiba (JP)</span> ·{" "}
-                        <span className="green">+ Adm. Paparo</span>
-                      </>
-                    ) : (
-                      "5 personas"
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div className="grow col center" style={{ padding: 24 }}>
+          <EmptyState
+            title="Need 2 completed debates to compare"
+            hint="Run more debates to enable side-by-side analysis."
+          />
         </div>
       </div>
     );
   }
 
-  // Live: render two most-recent completed discussions side-by-side.
-  const probDelta = liveDebates[0].quar - liveDebates[1].quar;
+  const confDelta = liveDebates[0].meanConfidence - liveDebates[1].meanConfidence;
+  const msgDelta = liveDebates[0].messagesCount - liveDebates[1].messagesCount;
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
@@ -271,16 +188,16 @@ export function CompareScreen() {
       />
       <div className="grow row" style={{ overflow: "hidden" }}>
         {liveDebates.map((d, i) => {
-          const statusQuo = Math.max(0, 1 - d.quar - d.blo - d.kin);
-          const dist: [string, number][] = [
-            ["Quarantine", d.quar],
-            ["Blockade", d.blo],
-            ["Kinetic", d.kin],
-            ["Status quo", statusQuo],
+          const total = d.dist.likely_true + d.dist.contested + d.dist.unverified;
+          const pct = (n: number) => (total === 0 ? 0 : n / total);
+          const histRows: { lbl: string; n: number; p: number; color: string }[] = [
+            { lbl: "Likely true", n: d.dist.likely_true, p: pct(d.dist.likely_true), color: "var(--green)" },
+            { lbl: "Contested", n: d.dist.contested, p: pct(d.dist.contested), color: "var(--amber)" },
+            { lbl: "Unverified", n: d.dist.unverified, p: pct(d.dist.unverified), color: "var(--red)" },
           ];
           const deltaPct =
-            i === 0 && liveDebates[1].quar > 0
-              ? Math.round((probDelta / liveDebates[1].quar) * 100)
+            i === 0 && liveDebates[1].meanConfidence > 0
+              ? Math.round((confDelta / liveDebates[1].meanConfidence) * 100)
               : null;
           return (
             <div
@@ -309,73 +226,79 @@ export function CompareScreen() {
 
               <div style={{ marginTop: 24, padding: 18, border: "1px solid var(--line-2)" }}>
                 <div className="tt-up muted" style={{ fontSize: 9 }}>
-                  MAIN PROBABILITY
+                  MEAN CONFIDENCE
                 </div>
                 <div className="tab" style={{ fontSize: 48, color: d.color, fontWeight: 600 }}>
-                  {claimsLoading ? "—" : d.quar.toFixed(2)}
+                  {claimsLoading ? "—" : d.meanConfidence.toFixed(2)}
                 </div>
                 {i === 0 && deltaPct !== null && (
                   <div
                     style={{
                       fontSize: 11,
-                      color: probDelta >= 0 ? "var(--green)" : "var(--red)",
+                      color: confDelta >= 0 ? "var(--green)" : "var(--red)",
                     }}
                   >
-                    {probDelta >= 0 ? "+" : ""}
-                    {probDelta.toFixed(2)} vs prior · {deltaPct}% relative{" "}
-                    {probDelta >= 0 ? "↑" : "↓"}
+                    {confDelta >= 0 ? "+" : ""}
+                    {confDelta.toFixed(2)} vs prior · {deltaPct}% relative{" "}
+                    {confDelta >= 0 ? "↑" : "↓"}
                   </div>
                 )}
               </div>
 
               <div style={{ marginTop: 16 }}>
                 <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 8 }}>
-                  SCENARIO DISTRIBUTION
+                  CLAIM STATUS · {d.claimsCount} claims
                 </div>
-                {dist.map(([l, p]) => (
-                  <div
-                    key={l}
-                    className="row gap-2"
-                    style={{ alignItems: "center", padding: "4px 0" }}
-                  >
-                    <span
-                      className="tt-up"
-                      style={{ fontSize: 9, color: "var(--ink-2)", minWidth: 90 }}
+                {total === 0 ? (
+                  <div className="muted" style={{ fontSize: 10 }}>no claims</div>
+                ) : (
+                  histRows.map((r) => (
+                    <div
+                      key={r.lbl}
+                      className="row gap-2"
+                      style={{ alignItems: "center", padding: "4px 0" }}
                     >
-                      {l}
-                    </span>
-                    <Bar value={p} max={1} width={200} color={d.color} />
-                    <span className="tab" style={{ fontSize: 11, color: "var(--ink-1)" }}>
-                      {p.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
+                      <span
+                        className="tt-up"
+                        style={{ fontSize: 9, color: "var(--ink-2)", minWidth: 90 }}
+                      >
+                        {r.lbl}
+                      </span>
+                      <Bar value={r.p} max={1} width={200} color={r.color} />
+                      <span className="tab" style={{ fontSize: 11, color: "var(--ink-1)" }}>
+                        {r.n}
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
 
-              <div style={{ marginTop: 24 }}>
-                <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 8 }}>
-                  NEW ENTITIES{i === 0 ? " SINCE PRIOR" : ""}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--ink-1)", lineHeight: 1.7 }}>
-                  {d.newEntities.length > 0 ? (
-                    d.newEntities.slice(0, 8).map((e, j) => (
+              {d.newEntities.length > 0 && (
+                <div style={{ marginTop: 24 }}>
+                  <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 8 }}>
+                    NEW ENTITIES{i === 0 ? " SINCE PRIOR" : ""}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--ink-1)", lineHeight: 1.7 }}>
+                    {d.newEntities.slice(0, 8).map((e, j) => (
                       <span key={`${e}-${j}`}>
                         · {e}
                         <br />
                       </span>
-                    ))
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div style={{ marginTop: 24 }}>
                 <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 8 }}>
                   CAST DELTA
                 </div>
                 <div style={{ fontSize: 11, color: "var(--ink-1)" }}>
-                  {claimsLoading ? "…" : `${d.claimsCount} claims`}
+                  {messagesLoading
+                    ? "…"
+                    : i === 0
+                      ? `${d.messagesCount} messages · ${msgDelta >= 0 ? "+" : ""}${msgDelta} vs prior`
+                      : `${d.messagesCount} messages`}
                 </div>
               </div>
             </div>
