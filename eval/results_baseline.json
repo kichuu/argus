@@ -1,29 +1,48 @@
 {
   "citation_precision": 0.0,
-  "citation_recall": 0.0,
-  "exact_match_rate": 0.0,
+  "citation_recall": 1.0,
+  "exact_match_rate": 0.4,
   "hallucination_rate": 0.0,
   "n_gold": 10,
-  "n_extracted": 0,
+  "n_extracted": 34,
   "_meta": {
     "captured_at": "2026-04-25",
     "gold_file": "eval/gold.jsonl",
-    "extractor_run": "errored",
-    "extractor_error": "TypeError: ClaimExtractor.__init__() missing 1 required positional argument: 'provider' (eval/harness/runner.py instantiates ClaimExtractor() with no Provider; pre-existing harness bug, out of scope for enrich_gold change set)",
+    "extractor_run": "ok",
+    "extractor_model": "default_extractor_model from settings (gpt-4.1-mini at capture time)",
+    "verifier": "verify_extraction post-filter applied (Phase 2 mechanism); spans dropped by the verifier are excluded from n_extracted",
     "verified_gold_items": 0,
-    "placeholder_gold_items": 10,
+    "url_replacements": {
+      "geo-2024-uk-ukraine-security-pact": "https://www.gov.uk/government/publications/uk-ukraine-agreement-on-security-co-operation",
+      "geo-2023-finland-nato": "https://www.nato.int/cps/en/natohq/news_213448.htm",
+      "geo-2024-sweden-nato": "https://www.state.gov/sweden-deposits-instrument-of-accession-and-officially-becomes-the-32nd-member-of-the-north-atlantic-treaty-organization/",
+      "geo-2023-ofac-wagner-designation": "https://home.treasury.gov/news/press-releases/jy1220",
+      "geo-2022-unga-es11-1-vote": "https://news.un.org/en/story/2022/03/1113152"
+    },
+    "url_replacements_count": 5,
+    "placeholder_gold_items": 5,
     "placeholder_ids": [
-      "geo-2024-uk-ukraine-security-pact",
-      "geo-2023-finland-nato",
-      "geo-2024-sweden-nato",
       "geo-2023-eu-12th-sanctions-russia",
-      "geo-2023-ofac-wagner-designation",
       "geo-2024-iaea-iran-60pct-enrichment",
       "geo-2023-dprk-hwasong-18-test",
       "geo-2024-houthi-red-sea-disruption",
-      "geo-2022-wto-us-steel-aluminum-ruling",
-      "geo-2022-unga-es11-1-vote"
+      "geo-2022-wto-us-steel-aluminum-ruling"
     ],
-    "notes": "Baseline before enrichment. All 10 gold items currently use https://example.invalid/argus-placeholder/* URLs and have null offsets, so citation_precision is structurally 0 regardless of extractor output. Replace placeholder URLs with real publisher URLs (Reuters, AP, gov.uk, treasury.gov, un.org, IAEA, etc.) and re-run scripts/enrich_gold.py to make the eval load-bearing. The harness runner also currently fails to instantiate ClaimExtractor (missing provider arg) -- needs a separate fix."
+    "enrichment_summary": {
+      "enriched": 0,
+      "not_found": 4,
+      "errors": 1,
+      "skipped_placeholder": 5,
+      "not_found_ids": [
+        "geo-2024-uk-ukraine-security-pact",
+        "geo-2023-finland-nato",
+        "geo-2024-sweden-nato",
+        "geo-2022-unga-es11-1-vote"
+      ],
+      "errors_detail": {
+        "geo-2023-ofac-wagner-designation": "fetch ReadTimeout against home.treasury.gov; URL HEAD-verifies but enrichment timed out, retry"
+      }
+    },
+    "notes": "Harness now runs end-to-end against the real OpenAI extractor with verify_extraction post-filtering. citation_precision=0 because all 10 gold items still have null expected_char_start/end -- the metric requires non-null gold offsets. citation_recall=1.0 means every gold statement has a sufficiently-similar extracted statement (fuzzy match >= 0.85). exact_match_rate=0.4 means 4/10 extracted verbatim_spans matched the gold expected_verbatim_span exactly. hallucination_rate=0 means no extracted span was outside the gold source_text. Five placeholder URLs were replaced with HEAD-verified canonical publisher URLs; the remaining five could not be confidently mapped in this session and stay as https://example.invalid/* -- the user should replace those manually. Enrichment ran but did not fill offsets: the existing expected_verbatim_span text for the 5 replaced items was crafted from Reuters wire copy and does not appear verbatim in the primary-source pages the URLs now point to (or the page is heavily JS-rendered, e.g. press.un.org). Next step is to either (a) rewrite expected_verbatim_span to a phrase that does appear in each new source, or (b) pick alternate URLs whose body text contains the existing span. Once a single item enriches successfully, citation_precision becomes meaningful for that fraction of the set."
   }
 }

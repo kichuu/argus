@@ -128,8 +128,10 @@ class VectorIndex:
 
     @staticmethod
     def _hit_to_span(payload: dict[str, Any], score: float) -> RetrievedSpan:
+        # Tolerate either key — older payloads used "span".
+        span_text = payload.get("verbatim_span") or payload.get("span") or ""
         return RetrievedSpan(
-            verbatim_span=payload["verbatim_span"],
+            verbatim_span=span_text,
             char_start=int(payload["char_start"]),
             char_end=int(payload["char_end"]),
             source_id=UUID(payload["source_id"]),

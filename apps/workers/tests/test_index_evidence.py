@@ -102,7 +102,7 @@ async def test_index_evidence_upserts_with_expected_payload(
     payload = points[0].payload
     assert payload["source_id"] == str(source_uuid)
     assert payload["claim_id"] == str(claim_uuid)
-    assert payload["span"] == "hello world"
+    assert payload["verbatim_span"] == "hello world"
     assert payload["char_start"] == 0
     assert payload["char_end"] == 11
     assert payload["trust_tier"] == 3

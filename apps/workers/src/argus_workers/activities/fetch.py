@@ -203,7 +203,7 @@ async def index_evidence(source_id: str) -> dict[str, Any]:
             payload: dict[str, Any] = {
                 "source_id": str(src_row.id),
                 "claim_id": str(claim.id),
-                "span": span_text,
+                "verbatim_span": span_text,
                 "char_start": int(ev.get("char_start") or 0),
                 "char_end": int(ev.get("char_end") or len(span_text)),
                 "fetched_at": (

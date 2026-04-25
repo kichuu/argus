@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Argus ingest LaunchAgent (per-user, not root).
+
+  PURPOSE
+  -------
+  Runs scripts/run_ingest_loop.py in the background, surviving logout,
+  with auto-restart on crash. The loop in turn spawns
+  scripts/ingest_roster.py every 5 minutes (see that script's
+  docstring for the 5-minute rationale).
+
+  WHY launchd, NOT cron?
+  ----------------------
+  * launchd is the supported scheduler on macOS; cron is deprecated
+    and runs in a stripped environment that often lacks `uv` on PATH.
+  * launchd's KeepAlive auto-restarts on crash.
+  * `launchctl print gui/<uid>/com.argus.ingest` gives live state.
+  * Survives logout (LaunchAgents run in the user's GUI session).
+
+  PLACEHOLDERS
+  ------------
+  The two tokens below are substituted by
+  scripts/install_ingest_daemon.sh before this plist is copied to
+  ~/Library/LaunchAgents/com.argus.ingest.plist:
+
+      __REPO_ROOT__   absolute path to the argus repo
+      __USER_HOME__   absolute path to the user's home directory
+
+  launchd does NOT expand $HOME, ~, or environment variables in
+  ProgramArguments / *Path keys, hence the literal substitution.
+
+  PREREQUISITE
+  ------------
+  The log directory must exist before loading. The install script
+  creates it; if you load this plist by hand, run first:
+
+      mkdir -p __USER_HOME__/Library/Logs/argus
+
+  DISABLE
+  -------
+  ./scripts/install_ingest_daemon.sh uninstall
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.argus.ingest</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/env</string>
+        <string>uv</string>
+        <string>run</string>
+        <string>python</string>
+        <string>scripts/run_ingest_loop.py</string>
+        <string>--interval-seconds</string>
+        <string>300</string>
+        <string>--max-items-override</string>
+        <string>3</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_ROOT__</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>EnvironmentVariables</key>
+    <dict/>
+
+    <key>StandardOutPath</key>
+    <string>__USER_HOME__/Library/Logs/argus/ingest-loop.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__USER_HOME__/Library/Logs/argus/ingest-loop.err.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

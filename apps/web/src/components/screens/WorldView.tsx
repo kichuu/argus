@@ -24,6 +24,18 @@ const project = (lat: number, lon: number) => ({
   y: ((90 - lat) / 180) * H,
 });
 
+// Compact terminal-aesthetic time-ago helper (12s / 3m / 2h / 1d).
+function formatTimeAgo(value?: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  const diff = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+}
+
 export function WorldView() {
   const router = useRouter();
   const setTopic = useDebateStore((s) => s.setTopic);

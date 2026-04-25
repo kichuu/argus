@@ -59,7 +59,8 @@ info()  { printf '  %s..%s    %s\n' "${C_BLUE}"   "${C_RESET}" "$1"; }
 # config
 # ---------------------------------------------------------------------------
 API_BASE="${ARGUS_API_BASE:-http://localhost:8000}"
-DEMO_TOPIC="${ARGUS_DEMO_TOPIC:-What does this week's reporting imply for NATO posture toward Russia, and which claims remain unverified?}"
+DEFAULT_DEMO_TOPIC="What does this week of reporting imply for NATO posture toward Russia, and which claims remain unverified?"
+DEMO_TOPIC="${ARGUS_DEMO_TOPIC:-${DEFAULT_DEMO_TOPIC}}"
 DEMO_VERTICAL="${ARGUS_DEMO_VERTICAL:-geopolitics}"
 POLL_INTERVAL_SEC=8
 POLL_TIMEOUT_SEC=240   # 4 minutes
@@ -137,9 +138,11 @@ info "POST ${API_BASE}/discussions  topic=\"${DEMO_TOPIC}\""
 export DEMO_TOPIC DEMO_VERTICAL
 BODY_JSON="$(python3 -c 'import json,os;print(json.dumps({"topic":os.environ["DEMO_TOPIC"],"vertical":os.environ["DEMO_VERTICAL"]}))')"
 
-START_RESPONSE="$(curl -fsS -X POST "${API_BASE}/discussions" \
-    -H "Content-Type: application/json" \
-    -d "${BODY_JSON}")" || {
+START_RESPONSE="$(
+    curl -fsS -X POST "${API_BASE}/discussions" \
+        -H "Content-Type: application/json" \
+        -d "${BODY_JSON}"
+)" || {
     err "POST /discussions failed."
     exit 1
 }

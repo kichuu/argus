@@ -3,14 +3,16 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID, uuid4
 
-from argus_core.db.models import ClaimModel, SourceModel
+from argus_core.db.models import ClaimModel, EntityModel, RelationModel, SourceModel
 from argus_core.db.session import session_scope
 from argus_core.logging import get_logger
 from argus_core.schemas import ClaimStatus, EvidenceRef, Source
 from argus_core.settings import get_settings
 from argus_extraction.extractor import ClaimExtractor
 from argus_extraction.providers import get_provider
+from argus_extraction.schemas import ExtractionResult
 from argus_extraction.verifier import verify_extraction
+from sqlalchemy import select
 from temporalio import activity
 
 logger = get_logger(__name__)
@@ -58,10 +60,60 @@ async def extract_claims(source_id: str) -> list[str]:
         )
 
     persisted_ids: list[str] = []
-    if not verified.claims:
+    if not verified.claims and not verified.entities:
         return persisted_ids
 
     async with session_scope() as session:
+        # 1. Upsert entities first (dedupe by canonical_name + entity_type) so
+        #    claims can reference them by UUID.
+        entity_id_by_name: dict[str, str] = {}
+        for ee in verified.entities:
+            existing = await session.execute(
+                select(EntityModel).where(
+                    EntityModel.canonical_name == ee.name,
+                    EntityModel.entity_type == ee.entity_type.value,
+                )
+            )
+            row = existing.scalar_one_or_none()
+            if row is None:
+                row = EntityModel(
+                    id=uuid4(),
+                    canonical_name=ee.name,
+                    entity_type=ee.entity_type.value,
+                    aliases=[],
+                )
+                session.add(row)
+                await session.flush()
+            entity_id_by_name[ee.name] = str(row.id)
+
+        # 2. Persist relations between known entities; skip if either side
+        #    didn't survive entity verification.
+        for er in verified.relations:
+            sid = entity_id_by_name.get(er.subject)
+            oid = entity_id_by_name.get(er.object)
+            if not sid or not oid:
+                continue
+            session.add(
+                RelationModel(
+                    id=uuid4(),
+                    subject_id=UUID(sid),
+                    relation_type=er.relation_type.value,
+                    object_id=UUID(oid),
+                    evidence=[
+                        {
+                            "source_id": str(source.id),
+                            "verbatim_span": er.verbatim_span,
+                            "char_start": er.char_start,
+                            "char_end": er.char_end,
+                        }
+                    ],
+                    confidence=0.0,
+                )
+            )
+
+        # 3. Persist claims, mapping mentioned-entity names to the canonical
+        #    entity UUIDs we just upserted (fall back to the raw name for
+        #    entities the LLM mentioned but didn't extract as a typed entity).
         for ec in verified.claims:
             evidence = EvidenceRef(
                 source_id=source.id,
@@ -71,6 +123,9 @@ async def extract_claims(source_id: str) -> list[str]:
                 fetched_at=source.fetched_at,
                 trust_tier=source.trust_tier,
             )
+            affected = [
+                entity_id_by_name.get(name, name) for name in ec.entities_mentioned
+            ]
             claim = ClaimModel(
                 id=uuid4(),
                 statement=ec.statement,
@@ -78,11 +133,17 @@ async def extract_claims(source_id: str) -> list[str]:
                 confidence=0.0,
                 supporting_evidence=[evidence.model_dump(mode="json")],
                 contradicting_evidence=[],
-                affected_entities=list(ec.entities_mentioned),
+                affected_entities=affected,
                 agent_consensus={},
             )
             session.add(claim)
             persisted_ids.append(str(claim.id))
 
-    logger.info("extract_claims.done", source_id=source_id, claims=len(persisted_ids))
+    logger.info(
+        "extract_claims.done",
+        source_id=source_id,
+        claims=len(persisted_ids),
+        entities=len(verified.entities),
+        relations=len(verified.relations),
+    )
     return persisted_ids
