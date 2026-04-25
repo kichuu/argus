@@ -126,3 +126,51 @@ verticals:
       feed_url: "https://feeds.apnews.com/rss/apf-topnews"
       trust_tier: 2
       tags: [general, wire]
+
+  tech:
+    - name: "Hacker News front page"
+      feed_url: "https://hnrss.org/frontpage"
+      trust_tier: 3
+      tags: [tech, community, hn]
+    - name: "Hacker News best"
+      feed_url: "https://hnrss.org/best"
+      trust_tier: 3
+      tags: [tech, community, hn]
+    - name: "Hacker News Show HN"
+      feed_url: "https://hnrss.org/show"
+      trust_tier: 3
+      tags: [tech, projects, hn]
+    - name: "Ars Technica"
+      feed_url: "https://feeds.arstechnica.com/arstechnica/index"
+      trust_tier: 2
+      tags: [tech, journalism]
+    - name: "MIT Technology Review"
+      feed_url: "https://www.technologyreview.com/feed/"
+      trust_tier: 2
+      tags: [tech, research]
+    - name: "The Verge"
+      feed_url: "https://www.theverge.com/rss/index.xml"
+      trust_tier: 3
+      tags: [tech, consumer]
+
+  community:
+    - name: "Reddit r/worldnews"
+      feed_url: "https://www.reddit.com/r/worldnews/.rss"
+      trust_tier: 4
+      tags: [reddit, community, world]
+    - name: "Reddit r/news"
+      feed_url: "https://www.reddit.com/r/news/.rss"
+      trust_tier: 4
+      tags: [reddit, community, us]
+    - name: "Reddit r/economics"
+      feed_url: "https://www.reddit.com/r/economics/.rss"
+      trust_tier: 4
+      tags: [reddit, community, economics]
+    - name: "Reddit r/geopolitics"
+      feed_url: "https://www.reddit.com/r/geopolitics/.rss"
+      trust_tier: 4
+      tags: [reddit, community, geopolitics]
+    - name: "Reddit r/science"
+      feed_url: "https://www.reddit.com/r/science/.rss"
+      trust_tier: 4
+      tags: [reddit, community, science]

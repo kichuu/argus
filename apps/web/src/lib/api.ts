@@ -216,6 +216,8 @@ export const api = {
   // === world ===
   worldPlaces: (opts: { limit?: number; min_claim_count?: number } = {}) =>
     request<PlacePin[]>(`/world/places${qs({ ...opts })}`),
+  worldSources: (opts: { limit?: number } = {}) =>
+    request<SourcePin[]>(`/world/sources${qs({ ...opts })}`),
 
   // === settings ===
   settings: (): Promise<SettingsResponse> => request<SettingsResponse>("/settings"),
@@ -229,6 +231,20 @@ export type PlacePin = {
   lon: number;
   wikidata_id: string | null;
   claim_count: number;
+};
+
+export type SourcePin = {
+  location_key: string;
+  city: string;
+  country: string;
+  lat: number;
+  lon: number;
+  source_count: number;
+  publisher_count: number;
+  publishers: string[];
+  sample_titles: string[];
+  sample_source_ids: string[];
+  latest_fetched_at: string | null;
 };
 
 // === settings ===

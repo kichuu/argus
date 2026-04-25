@@ -9,17 +9,22 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
 with_worker=0
+with_ingest=0
+ingest_interval=90
 for arg in "$@"; do
     case "$arg" in
         --with-worker) with_worker=1 ;;
+        --with-ingest) with_ingest=1 ;;
+        --ingest-interval=*) ingest_interval="${arg#*=}" ;;
         -h|--help)
             cat <<USAGE
-Usage: $0 [--with-worker]
+Usage: $0 [--with-worker] [--with-ingest [--ingest-interval=N]]
 
 Starts:
   - FastAPI (uvicorn --reload) on http://localhost:8000
   - Next.js (pnpm dev)         on http://localhost:3000
-  - Temporal worker if --with-worker (only useful when temporal server is up)
+  - Temporal worker  with --with-worker (only useful when temporal server is up)
+  - Continuous ingestion loop with --with-ingest (every N seconds, default 90)
 
 Ctrl-C or any one process exiting brings everything down.
 USAGE
@@ -78,6 +83,12 @@ if [ "$with_worker" -eq 1 ]; then
     pids+=($!)
 fi
 
+if [ "$with_ingest" -eq 1 ]; then
+    echo "[start.sh] starting continuous ingestion loop (every ${ingest_interval}s)"
+    uv run python -m scripts.run_ingestion_loop --interval "$ingest_interval" &
+    pids+=($!)
+fi
+
 echo "[start.sh] starting frontend on http://localhost:3000"
 (cd apps/web && pnpm dev) &
 pids+=($!)
@@ -88,6 +99,9 @@ echo "    API       http://localhost:8000   (docs: http://localhost:8000/docs)"
 echo "    Frontend  http://localhost:3000"
 if [ "$with_worker" -eq 1 ]; then
     echo "    Worker    Temporal task queue: argus-default"
+fi
+if [ "$with_ingest" -eq 1 ]; then
+    echo "    Ingest    pulling RSS/HN/Reddit every ${ingest_interval}s"
 fi
 echo
 

@@ -1,0 +1,80 @@
+# Maps a source publisher's domain to its primary HQ coordinates.
+# Used by GET /world/sources to pin Sources on the map without requiring
+# entity-level geocoding to have run.
+#
+# Add new entries as you add feeds to seed_sources.yaml. Domain key is the
+# bare host (no `www.`, no path). lat/lon are decimal degrees.
+publishers:
+  # --- US federal / official ---
+  federalreserve.gov:    { city: "Washington, DC",  country: "US", lat: 38.8924, lon: -77.0455 }
+  sec.gov:               { city: "Washington, DC",  country: "US", lat: 38.8964, lon: -77.0257 }
+  bls.gov:               { city: "Washington, DC",  country: "US", lat: 38.8939, lon: -77.0149 }
+  treasury.gov:          { city: "Washington, DC",  country: "US", lat: 38.8987, lon: -77.0345 }
+  home.treasury.gov:     { city: "Washington, DC",  country: "US", lat: 38.8987, lon: -77.0345 }
+  congress.gov:          { city: "Washington, DC",  country: "US", lat: 38.8898, lon: -77.0089 }
+  supremecourt.gov:      { city: "Washington, DC",  country: "US", lat: 38.8906, lon: -77.0044 }
+  whitehouse.gov:        { city: "Washington, DC",  country: "US", lat: 38.8977, lon: -77.0365 }
+  noaa.gov:              { city: "Silver Spring",   country: "US", lat: 38.9907, lon: -77.0260 }
+  www.noaa.gov:          { city: "Silver Spring",   country: "US", lat: 38.9907, lon: -77.0260 }
+  nasa.gov:              { city: "Washington, DC",  country: "US", lat: 38.8830, lon: -77.0163 }
+  www.nasa.gov:          { city: "Washington, DC",  country: "US", lat: 38.8830, lon: -77.0163 }
+  eia.gov:               { city: "Washington, DC",  country: "US", lat: 38.8964, lon: -77.0142 }
+  www.eia.gov:           { city: "Washington, DC",  country: "US", lat: 38.8964, lon: -77.0142 }
+  govinfo.gov:           { city: "Washington, DC",  country: "US", lat: 38.8898, lon: -77.0089 }
+
+  # --- IGOs ---
+  ipcc.ch:               { city: "Geneva",          country: "CH", lat: 46.2330, lon: 6.0556 }
+  www.ipcc.ch:           { city: "Geneva",          country: "CH", lat: 46.2330, lon: 6.0556 }
+  who.int:               { city: "Geneva",          country: "CH", lat: 46.2326, lon: 6.1396 }
+  www.who.int:           { city: "Geneva",          country: "CH", lat: 46.2326, lon: 6.1396 }
+  imf.org:               { city: "Washington, DC",  country: "US", lat: 38.8987, lon: -77.0426 }
+  www.imf.org:           { city: "Washington, DC",  country: "US", lat: 38.8987, lon: -77.0426 }
+  un.org:                { city: "New York",        country: "US", lat: 40.7489, lon: -73.9680 }
+  news.un.org:           { city: "New York",        country: "US", lat: 40.7489, lon: -73.9680 }
+  oecd.org:              { city: "Paris",           country: "FR", lat: 48.8742, lon: 2.2861 }
+  bis.org:               { city: "Basel",           country: "CH", lat: 47.5448, lon: 7.5851 }
+  iea.org:               { city: "Paris",           country: "FR", lat: 48.8650, lon: 2.3030 }
+  www.iea.org:           { city: "Paris",           country: "FR", lat: 48.8650, lon: 2.3030 }
+  ec.europa.eu:          { city: "Brussels",        country: "BE", lat: 50.8430, lon: 4.3826 }
+  consilium.europa.eu:   { city: "Brussels",        country: "BE", lat: 50.8419, lon: 4.3805 }
+  www.consilium.europa.eu: { city: "Brussels",      country: "BE", lat: 50.8419, lon: 4.3805 }
+  ecb.europa.eu:         { city: "Frankfurt",       country: "DE", lat: 50.1090, lon: 8.7026 }
+  www.ecb.europa.eu:     { city: "Frankfurt",       country: "DE", lat: 50.1090, lon: 8.7026 }
+  bankofengland.co.uk:   { city: "London",          country: "UK", lat: 51.5142, lon: -0.0884 }
+  www.bankofengland.co.uk: { city: "London",        country: "UK", lat: 51.5142, lon: -0.0884 }
+
+  # --- Major news (Tier 2) ---
+  reuters.com:           { city: "London",          country: "UK", lat: 51.5099, lon: -0.0118 }
+  www.reuters.com:       { city: "London",          country: "UK", lat: 51.5099, lon: -0.0118 }
+  feeds.reuters.com:     { city: "London",          country: "UK", lat: 51.5099, lon: -0.0118 }
+  apnews.com:            { city: "New York",        country: "US", lat: 40.7569, lon: -73.9886 }
+  feeds.apnews.com:      { city: "New York",        country: "US", lat: 40.7569, lon: -73.9886 }
+  bbc.co.uk:             { city: "London",          country: "UK", lat: 51.5180, lon: -0.1432 }
+  bbc.com:               { city: "London",          country: "UK", lat: 51.5180, lon: -0.1432 }
+  feeds.bbci.co.uk:      { city: "London",          country: "UK", lat: 51.5180, lon: -0.1432 }
+  ft.com:                { city: "London",          country: "UK", lat: 51.5079, lon: -0.0877 }
+  www.ft.com:            { city: "London",          country: "UK", lat: 51.5079, lon: -0.0877 }
+  bloomberg.com:         { city: "New York",        country: "US", lat: 40.7596, lon: -73.9686 }
+  www.bloomberg.com:     { city: "New York",        country: "US", lat: 40.7596, lon: -73.9686 }
+  wsj.com:               { city: "New York",        country: "US", lat: 40.7396, lon: -74.0085 }
+  www.wsj.com:           { city: "New York",        country: "US", lat: 40.7396, lon: -74.0085 }
+  nytimes.com:           { city: "New York",        country: "US", lat: 40.7561, lon: -73.9903 }
+  www.nytimes.com:       { city: "New York",        country: "US", lat: 40.7561, lon: -73.9903 }
+  washingtonpost.com:    { city: "Washington, DC",  country: "US", lat: 38.9038, lon: -77.0331 }
+  economist.com:         { city: "London",          country: "UK", lat: 51.5119, lon: -0.0820 }
+  theguardian.com:       { city: "London",          country: "UK", lat: 51.5345, lon: -0.1224 }
+  www.theguardian.com:   { city: "London",          country: "UK", lat: 51.5345, lon: -0.1224 }
+  npr.org:               { city: "Washington, DC",  country: "US", lat: 38.9080, lon: -77.0019 }
+  dw.com:                { city: "Bonn",            country: "DE", lat: 50.7160, lon: 7.1100 }
+  rss.dw.com:            { city: "Bonn",            country: "DE", lat: 50.7160, lon: 7.1100 }
+
+  # --- Regional / specialist (Tier 3) ---
+  politico.com:          { city: "Arlington",       country: "US", lat: 38.8627, lon: -77.0537 }
+  axios.com:             { city: "Arlington",       country: "US", lat: 38.8800, lon: -77.0900 }
+  propublica.org:        { city: "New York",        country: "US", lat: 40.7100, lon: -74.0080 }
+  semafor.com:           { city: "New York",        country: "US", lat: 40.7530, lon: -73.9830 }
+  arstechnica.com:       { city: "New York",        country: "US", lat: 40.7831, lon: -73.9712 }
+  scotusblog.com:        { city: "Washington, DC",  country: "US", lat: 38.8906, lon: -77.0044 }
+  carbonbrief.org:       { city: "London",          country: "UK", lat: 51.5074, lon: -0.1278 }
+  hnrss.org:             { city: "San Francisco",   country: "US", lat: 37.7749, lon: -122.4194 }
+  news.ycombinator.com:  { city: "San Francisco",   country: "US", lat: 37.7749, lon: -122.4194 }

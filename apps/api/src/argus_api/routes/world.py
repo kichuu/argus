@@ -1,8 +1,12 @@
+from collections import Counter
+from datetime import datetime
 from typing import Annotated
+from urllib.parse import urlparse
 from uuid import UUID
 
-from argus_core.db.models import ClaimModel, EntityModel
+from argus_core.db.models import ClaimModel, EntityModel, SourceModel
 from argus_core.logging import get_logger
+from argus_core.publisher_geo import load_publisher_geo
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import String, cast, func, select
@@ -75,4 +79,109 @@ async def list_places(
                 claim_count=count,
             )
         )
+    return pins
+
+
+class SourcePin(BaseModel):
+    location_key: str  # "city, country" — used as the pin's stable id
+    city: str
+    country: str
+    lat: float
+    lon: float
+    source_count: int
+    publisher_count: int
+    publishers: list[str]
+    sample_titles: list[str]
+    sample_source_ids: list[UUID]
+    latest_fetched_at: datetime | None
+
+
+@router.get("/sources", response_model=list[SourcePin])
+async def list_source_pins(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    limit: int = Query(500, ge=1, le=2000),
+) -> list[SourcePin]:
+    """Pins for ingested Sources, grouped by publisher HQ location.
+
+    Looks up each Source's publisher domain in config/publisher_locations.yaml
+    and aggregates by (city, country). One pin per location, sized by source
+    count, with a list of publishers + sample titles for the side panel.
+
+    No DB schema change required — all done in-memory at request time.
+    Sources whose publisher isn't in the config are silently skipped (their
+    domain is logged once per request so you can extend the config).
+    """
+    geo = load_publisher_geo()
+    stmt = (
+        select(
+            SourceModel.id,
+            SourceModel.url,
+            SourceModel.title,
+            SourceModel.publisher,
+            SourceModel.fetched_at,
+        )
+        .order_by(SourceModel.fetched_at.desc())
+        .limit(limit)
+    )
+    rows = (await session.execute(stmt)).all()
+
+    # Aggregate by location. Key = "city, country" string is unique enough
+    # for our config; more granular would need composite key.
+    grouped: dict[str, dict] = {}
+    unmatched: Counter[str] = Counter()
+    for row in rows:
+        host = ""
+        if row.url:
+            host = urlparse(str(row.url)).hostname or ""
+        if not host and row.publisher:
+            host = row.publisher
+        loc = geo.lookup(host)
+        if loc is None:
+            if host:
+                unmatched[host] += 1
+            continue
+        key = f"{loc.city}, {loc.country}"
+        bucket = grouped.setdefault(
+            key,
+            {
+                "city": loc.city,
+                "country": loc.country,
+                "lat": loc.lat,
+                "lon": loc.lon,
+                "source_ids": [],
+                "publishers": set(),
+                "titles": [],
+                "latest": None,
+            },
+        )
+        bucket["source_ids"].append(row.id)
+        if row.publisher:
+            bucket["publishers"].add(row.publisher)
+        else:
+            bucket["publishers"].add(host)
+        if len(bucket["titles"]) < 5:
+            bucket["titles"].append(row.title or "(untitled)")
+        if bucket["latest"] is None or (row.fetched_at and row.fetched_at > bucket["latest"]):
+            bucket["latest"] = row.fetched_at
+
+    if unmatched:
+        logger.info("world_sources_unmatched_publishers", unmatched=dict(unmatched.most_common(10)))
+
+    pins = [
+        SourcePin(
+            location_key=key,
+            city=b["city"],
+            country=b["country"],
+            lat=b["lat"],
+            lon=b["lon"],
+            source_count=len(b["source_ids"]),
+            publisher_count=len(b["publishers"]),
+            publishers=sorted(b["publishers"])[:10],
+            sample_titles=b["titles"],
+            sample_source_ids=b["source_ids"][:5],
+            latest_fetched_at=b["latest"],
+        )
+        for key, b in grouped.items()
+    ]
+    pins.sort(key=lambda p: p.source_count, reverse=True)
     return pins
