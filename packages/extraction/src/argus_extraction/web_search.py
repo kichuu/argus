@@ -62,13 +62,13 @@ class WebSearchClient:
 
         try:
             resp = await self._invoke(prompt)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("web_search.invoke_failed", query=query, error=str(exc))
             return []
 
         try:
             results = self._parse_response(resp)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("web_search.parse_failed", query=query, error=str(exc))
             return []
 
@@ -193,10 +193,13 @@ class WebSearchClient:
             annotations = self._field(block, "annotations") or []
             for ann in annotations:
                 ann_type = self._field(ann, "type") or ""
-                if "url" not in ann_type and "citation" not in ann_type:
-                    # Some SDKs name it `url_citation`, others `citation`.
-                    if not self._field(ann, "url"):
-                        continue
+                # Some SDKs name it `url_citation`, others `citation`.
+                if (
+                    "url" not in ann_type
+                    and "citation" not in ann_type
+                    and not self._field(ann, "url")
+                ):
+                    continue
                 url = self._coerce_str(self._field(ann, "url"))
                 if not url:
                     continue
@@ -259,7 +262,7 @@ class WebSearchClient:
 def _host_of(url: str) -> str:
     try:
         host = urlparse(url).hostname or url
-    except Exception:  # noqa: BLE001
+    except Exception:
         return url
     return host.removeprefix("www.")
 
@@ -272,10 +275,14 @@ def _build_text(title: str, snippet: str, surrounding: str = "") -> str:
     base = title.strip()
     if snippet and snippet not in base:
         base = f"{base}. {snippet}" if base else snippet
-    if surrounding and snippet and snippet in surrounding:
-        # Prefer the wider paragraph if it actually contains the snippet.
-        if len(surrounding) > len(base):
-            return surrounding
+    # Prefer the wider paragraph if it actually contains the snippet.
+    if (
+        surrounding
+        and snippet
+        and snippet in surrounding
+        and len(surrounding) > len(base)
+    ):
+        return surrounding
     return base or surrounding
 
 

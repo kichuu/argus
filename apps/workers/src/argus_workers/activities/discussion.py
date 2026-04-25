@@ -10,7 +10,6 @@ from argus_core.db.models import (
     DiscussionRunModel,
     SourceModel,
 )
-from sqlalchemy import select as _sa_select
 from argus_core.db.session import session_scope
 from argus_core.logging import get_logger
 from argus_core.schemas import DiscussionStatus, EvidenceRef, Source
@@ -32,7 +31,7 @@ logger = get_logger(__name__)
 _EVIDENCE_PACK_MAX = 30
 
 
-async def _build_hybrid_retriever() -> "HybridRetriever | None":
+async def _build_hybrid_retriever() -> HybridRetriever | None:
     """Construct a real HybridRetriever; return None if any backend
     (Qdrant/AGE/embedder/reranker) is unreachable.
 
@@ -45,7 +44,7 @@ async def _build_hybrid_retriever() -> "HybridRetriever | None":
         from argus_retrieval.hybrid import HybridRetriever
         from argus_retrieval.rerank import get_reranker
         from argus_retrieval.vector import VectorIndex
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("hybrid_retriever_import_failed", error=str(e))
         return None
 
@@ -54,7 +53,7 @@ async def _build_hybrid_retriever() -> "HybridRetriever | None":
         embedder = Embedder()
         reranker = get_reranker()
         graph = GraphQuerier()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("hybrid_retriever_build_failed", error=str(e))
         return None
 
@@ -66,7 +65,7 @@ async def _build_hybrid_retriever() -> "HybridRetriever | None":
     )
 
 
-def _retrieved_span_to_evidence_dict(span: "RetrievedSpan") -> dict[str, Any]:
+def _retrieved_span_to_evidence_dict(span: RetrievedSpan) -> dict[str, Any]:
     """Translate a RetrievedSpan into an EvidenceRef-shaped dict.
 
     EvidenceRef enforces `char_end - char_start == len(verbatim_span)`. If a
@@ -133,7 +132,7 @@ async def _baseline_evidence_pack(vertical: str, limit: int = 20) -> list[dict[s
         for ev in row.supporting_evidence:
             try:
                 ref = EvidenceRef.model_validate(ev)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 continue
             pack.append(ref.model_dump(mode="json"))
     return pack
@@ -142,13 +141,13 @@ async def _baseline_evidence_pack(vertical: str, limit: int = 20) -> list[dict[s
 def _trust_tier_for_url(url: str) -> int:
     try:
         host = urlparse(url).hostname or ""
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 4
     if not host:
         return 4
     try:
         return load_trust_config().tier_for_domain(host)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 4
 
 
@@ -247,7 +246,7 @@ def _evidence_for_web_source(source: Source, snippet: str) -> dict[str, Any] | N
             fetched_at=source.fetched_at,
             trust_tier=int(source.trust_tier),
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
             "web_evidence.build_failed",
             source_id=str(source.id),
@@ -267,7 +266,7 @@ async def _web_evidence_for_topic(
     for result in results:
         try:
             source = await _persist_web_source(result)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "web_source_persist_failed",
                 url=result.url,
@@ -299,7 +298,7 @@ async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
             web_evidence = await _web_evidence_for_topic(
                 topic, settings.web_search_max_results
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "assemble_evidence_pack.web_search_failed",
                 discussion_id=discussion_id,
@@ -314,7 +313,7 @@ async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
             spans = await retriever.retrieve(
                 topic, top_k=20, recency_boost=True
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(
                 "hybrid_retrieve_failed_falling_back_baseline",
                 discussion_id=discussion_id,
@@ -324,7 +323,7 @@ async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
         for span in spans:
             try:
                 hybrid_evidence.append(_retrieved_span_to_evidence_dict(span))
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(
                     "retrieved_span_translation_failed",
                     discussion_id=discussion_id,
@@ -380,7 +379,7 @@ class _EvidencePackRetriever:
     def __init__(self, evidence_dicts: list[dict[str, Any]]) -> None:
         self._evidence = [EvidenceRef.model_validate(e) for e in evidence_dicts]
 
-    async def retrieve(self, query: str, **_: Any):  # noqa: D401, ARG002
+    async def retrieve(self, query: str, **_: Any):
         return list(self._evidence)
 
 
