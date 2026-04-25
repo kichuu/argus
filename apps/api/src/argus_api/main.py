@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from argus_core.instrumentation import setup_telemetry
 from argus_core.logging import configure_logging, get_logger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,7 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
+    setup_telemetry("argus-api")
     logger.info("argus_api.startup", version=__version__)
     yield
     logger.info("argus_api.shutdown")

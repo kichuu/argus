@@ -1,5 +1,6 @@
 import asyncio
 
+from argus_core.instrumentation import setup_telemetry
 from argus_core.logging import configure_logging, get_logger
 from argus_core.settings import get_settings
 from temporalio.client import Client
@@ -22,6 +23,7 @@ logger = get_logger(__name__)
 
 async def run_worker() -> None:
     configure_logging()
+    setup_telemetry("argus-workers")
     settings = get_settings()
 
     logger.info(
