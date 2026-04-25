@@ -199,13 +199,13 @@ export function useDiscussionStream(discussionId: string | null): DiscussionStre
     };
   }, [discussionId]);
 
-  // Polling fallback — only enabled when in polling mode. Mirrors useDiscussionPolling.
-  const pollingEnabled = !!discussionId && mode === "polling";
-
+  // Always poll the snapshot. WS is a live-append channel; for terminal /
+  // historical discussions the WS opens but never emits, so polling is the
+  // only path to the data. The two sources are merged in the return memo.
   const statusQ = useQuery<DiscussionRun>({
     queryKey: ["discussion", discussionId],
     queryFn: () => api.discussion(discussionId!),
-    enabled: pollingEnabled,
+    enabled: !!discussionId,
     refetchInterval: (query) => {
       const data = query.state.data as DiscussionRun | undefined;
       if (!data) return 1500;
@@ -218,7 +218,7 @@ export function useDiscussionStream(discussionId: string | null): DiscussionStre
   const messagesQ = useQuery<AgentMessage[]>({
     queryKey: ["discussion-messages", discussionId],
     queryFn: () => api.discussionMessages(discussionId!, { limit: 500 }),
-    enabled: pollingEnabled,
+    enabled: !!discussionId,
     refetchInterval: () => {
       const s = statusQ.data?.status;
       if (s && TERMINAL.includes(s)) return false;
@@ -227,7 +227,7 @@ export function useDiscussionStream(discussionId: string | null): DiscussionStre
     staleTime: 0,
   });
 
-  const finalClaimIds = mode === "polling" ? (statusQ.data?.final_claim_ids ?? []) : [];
+  const finalClaimIds = statusQ.data?.final_claim_ids ?? [];
   const claimQs = useQueries({
     queries: finalClaimIds.map((id) => ({
       queryKey: ["claim", id],
@@ -240,27 +240,34 @@ export function useDiscussionStream(discussionId: string | null): DiscussionStre
     .filter((c): c is Claim => !!c);
 
   return useMemo<DiscussionStream>(() => {
-    if (mode === "ws") {
-      return {
-        mode,
-        status: wsState.phase,
-        phase: wsState.phase,
-        messages: wsState.messages,
-        claims: wsState.claims,
-        agentStatuses: wsState.agentStatuses,
-        errorDetail: wsState.errorDetail,
-        lastEventAt: wsState.lastEventAt,
-      };
-    }
     const detail = statusQ.data ?? null;
     const polledStatus = detail?.status ?? null;
-    const errorDetail = detail?.error ?? null;
+    const errorDetail = wsState.errorDetail ?? detail?.error ?? null;
+
+    // Merge WS append with the polled snapshot, dedup by id, keep insertion order.
+    const seenMsgIds = new Set<string>();
+    const messages: AgentMessage[] = [];
+    for (const m of [...(messagesQ.data ?? []), ...wsState.messages]) {
+      if (seenMsgIds.has(m.id)) continue;
+      seenMsgIds.add(m.id);
+      messages.push(m);
+    }
+    const seenClaimIds = new Set<string>();
+    const claims: Claim[] = [];
+    for (const c of [...polledClaims, ...wsState.claims]) {
+      if (seenClaimIds.has(c.id)) continue;
+      seenClaimIds.add(c.id);
+      claims.push(c);
+    }
+
     return {
       mode,
-      status: polledStatus,
-      phase: polledStatus,
-      messages: messagesQ.data ?? [],
-      claims: polledClaims,
+      // Prefer WS-emitted phase (more granular - includes "criticizing")
+      // but fall back to polled status for past/terminal discussions.
+      status: wsState.phase ?? polledStatus,
+      phase: wsState.phase ?? polledStatus,
+      messages,
+      claims,
       agentStatuses: wsState.agentStatuses,
       errorDetail,
       lastEventAt: wsState.lastEventAt,

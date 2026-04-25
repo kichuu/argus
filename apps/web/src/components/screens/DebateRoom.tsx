@@ -1,5 +1,5 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AsciiSpinner } from "@/components/ui/AsciiSpinner";
 import { Bar } from "@/components/ui/Bar";
@@ -387,18 +387,37 @@ function SynthesisPanel({ claims }: { claims: Claim[] }) {
 
 export function DebateRoom() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const storedTopic = useDebateStore((s) => s.topic);
   const setStoredTopic = useDebateStore((s) => s.setTopic);
 
+  const urlId = searchParams.get("id");
   const [topic, setTopic] = useState(storedTopic ?? "");
   const [vertical, setVertical] = useState<string>("geopolitics");
-  const [discussionId, setDiscussionId] = useState<string | null>(null);
+  const [discussionId, setDiscussionId] = useState<string | null>(urlId);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
 
+  // Reload an existing discussion when URL id changes (e.g. clicked from /ops).
+  useEffect(() => {
+    if (urlId && urlId !== discussionId) setDiscussionId(urlId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlId]);
+
   const stream = useDiscussionStream(discussionId);
+
+  // When loading an existing discussion (URL id), surface its topic in the
+  // input so the breadcrumb + RUN copy makes sense.
+  useEffect(() => {
+    if (urlId && stream.messages.length > 0 && !topic) {
+      const first = stream.messages[0];
+      // server doesn't return topic on /messages; the breadcrumb pulls it from
+      // the discussion detail via stream — leave topic alone, breadcrumb shows id.
+      void first;
+    }
+  }, [urlId, stream.messages, topic]);
   const messageList = stream.messages;
   const sStatus: DStatus = stream.status ?? "planning";
   const hasStatus = stream.status !== null;
