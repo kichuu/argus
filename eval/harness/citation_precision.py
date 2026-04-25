@@ -29,9 +29,9 @@ def load_gold(path: Path) -> list[GoldClaim]:
 
 
 def _spans_match(
-    g_start: int, g_end: int, e_start: int | None, e_end: int | None
+    g_start: int | None, g_end: int | None, e_start: int | None, e_end: int | None
 ) -> bool:
-    if e_start is None or e_end is None:
+    if g_start is None or g_end is None or e_start is None or e_end is None:
         return False
     return abs(e_start - g_start) <= CHAR_TOLERANCE and abs(e_end - g_end) <= CHAR_TOLERANCE
 

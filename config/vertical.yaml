@@ -1,0 +1,37 @@
+vertical: geopolitics
+
+topics_in_scope:
+  - interstate_conflicts
+  - sanctions
+  - treaties_and_agreements
+  - elections_with_intl_impact
+  - nuclear_and_security
+  - trade_disputes
+  - diplomatic_actions
+  - international_organizations
+
+topics_out_of_scope:
+  - domestic_only_politics
+  - celebrity
+  - sports
+  - weather
+
+primary_domains:
+  - reuters.com
+  - apnews.com
+  - afp.com
+  - bbc.com
+  - aljazeera.com
+  - ft.com
+  - state.gov
+  - un.org
+  - iaea.org
+  - europa.eu
+  - gov.uk
+  - whitehouse.gov
+
+embargo:
+  - "No claims about private actions of living individuals."
+  - "No unverified intelligence/leaks unless multiple tier-1 sources confirm."
+  - "Casualty figures must cite the source authority (e.g., 'per UN OCHA')."
+  - "Avoid claims younger than 24h unless tier-1 reporting."
