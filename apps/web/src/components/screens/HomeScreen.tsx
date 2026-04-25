@@ -1,5 +1,5 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Btn } from "@/components/ui/Btn";
@@ -15,11 +15,13 @@ import { useDebateStore } from "@/store/debate";
 export function HomeScreen() {
   const router = useRouter();
   const setTopic = useDebateStore((s) => s.setTopic);
+  const setDiscussionId = useDebateStore((s) => s.setDiscussionId);
   const D = ARGUS_DATA;
   const [prompt, setPrompt] = useState("");
   const [depth, setDepth] = useState<"quick" | "standard" | "deep">("standard");
   const [autoPersonas, setAutoPersonas] = useState<boolean>(true);
   const [sources, setSources] = useState({ rss: true, news: true, social: true, kg: true });
+  const [launchError, setLaunchError] = useState<string | null>(null);
 
   const health = useQuery({
     queryKey: ["health"],
@@ -28,13 +30,34 @@ export function HomeScreen() {
     staleTime: 30_000,
   });
 
+  const startMutation = useMutation({
+    mutationFn: (body: { topic: string; vertical?: string }) => api.startDiscussion(body),
+    retry: 0,
+  });
+
   const launch = (text?: string) => {
-    setTopic(
+    const topic =
       text ||
-        prompt ||
-        "Will the PRC escalate to a customs quarantine of Taiwanese ports within 12 months?",
+      prompt ||
+      "Will the PRC escalate to a customs quarantine of Taiwanese ports within 12 months?";
+    setTopic(topic);
+    setLaunchError(null);
+
+    startMutation.mutate(
+      { topic, vertical: "geopolitics" },
+      {
+        onSuccess: (res) => {
+          setDiscussionId(res.id);
+          router.push("/ops");
+        },
+        onError: (err) => {
+          setDiscussionId(null);
+          setLaunchError(err instanceof Error ? err.message : "launch failed");
+          // still route so the user sees the offline mock
+          router.push("/ops");
+        },
+      },
     );
-    router.push("/ops");
   };
 
   const apiOnline = health.isSuccess;
@@ -147,9 +170,12 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
             <div style={{ flex: 1 }} />
             <div className="row gap-2" style={{ alignItems: "center" }}>
               <Btn primary onClick={() => launch()}>
-                ▸ CONVENE COUNCIL
+                {startMutation.isPending ? "▸ LAUNCHING..." : "▸ CONVENE COUNCIL"}
               </Btn>
               <Btn ghost>SCHEDULE RECURRING</Btn>
+              {launchError && (
+                <Chip tone="amber">offline · mock</Chip>
+              )}
               <div style={{ flex: 1 }} />
               <span className="muted tt-up" style={{ fontSize: 9 }}>
                 EST · ~$0.42 · ~94s · 7 personas
@@ -286,12 +312,6 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
         </Panel>
       </div>
 
-      {/* Used to satisfy linter — Chip imported but rendered conditionally if API is offline */}
-      {!apiOnline && health.isError && (
-        <div style={{ display: "none" }}>
-          <Chip>fallback mock</Chip>
-        </div>
-      )}
     </div>
   );
 }

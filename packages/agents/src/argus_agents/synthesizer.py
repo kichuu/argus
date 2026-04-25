@@ -1,5 +1,7 @@
+import re
+
 from argus_core.logging import get_logger
-from argus_core.schemas import AgentRole, Claim, ClaimStatus, EvidenceRef
+from argus_core.schemas import AgentMessage, AgentRole, Claim, ClaimStatus, EvidenceRef
 from argus_core.schemas.claim import AgentConsensus
 from argus_core.settings import get_settings
 from argus_extraction.providers import Provider
@@ -9,6 +11,8 @@ from argus_agents.base import Agent
 from argus_agents.state import DiscussionState
 
 logger = get_logger(__name__)
+
+_REJECTED_RE = re.compile(r"REJECTED_EVIDENCE_IDS:\s*([^\n]+)")
 
 
 class _ProposedClaim(BaseModel):
@@ -86,18 +90,30 @@ class SynthesizerAgent(Agent):
             state.errors.append("synthesizer: provider returned wrong type")
             return state
 
+        # Critic flagged-but-not-rejected evidence (partial verdicts) and a
+        # hard-rejected set parsed from the structured marker the critic
+        # leaves in its message body.
         critic_flagged_ids: set[str] = set()
+        rejected_ids: set[str] = set()
         for cmsg in critic_msgs:
             for ref in cmsg.evidence_refs:
                 critic_flagged_ids.add(str(ref.source_id))
+            for match in _REJECTED_RE.finditer(cmsg.content):
+                for eid in match.group(1).split(","):
+                    eid_clean = eid.strip()
+                    if eid_clean:
+                        rejected_ids.add(eid_clean)
 
         claims: list[Claim] = []
         for prop in slate.claims:
-            supporting = [
-                evidence_by_id[eid]
+            # Drop claims whose supporting evidence was rejected outright by
+            # the critic; those are "no" verdicts per the protocol.
+            supporting_ids = [
+                eid
                 for eid in prop.supporting_evidence_ids
-                if eid in evidence_by_id
+                if eid in evidence_by_id and eid not in rejected_ids
             ]
+            supporting = [evidence_by_id[eid] for eid in supporting_ids]
             if not supporting:
                 logger.warning("synth_claim_no_evidence", statement=prop.statement)
                 continue
@@ -109,18 +125,30 @@ class SynthesizerAgent(Agent):
             ]
 
             total = max(prop.agree + prop.disagree + prop.uncertain, 1)
-            confidence = prop.agree / total
-            has_critic_hit = any(
+            agree_share = prop.agree / total
+            partial_hit = any(
                 str(s.source_id) in critic_flagged_ids for s in supporting
             )
-            if has_critic_hit:
-                confidence = min(confidence, 0.5)
+
+            # Calibrated confidence: weight by consensus *and* evidence count,
+            # then haircut for partial critic verdicts and contradictions.
+            evidence_factor = min(len(supporting) / 3.0, 1.0)
+            base = 0.4 + 0.4 * agree_share + 0.2 * evidence_factor
+            if partial_hit:
+                base -= 0.25
+            if contradicting:
+                base -= 0.2
+            confidence = max(0.05, min(0.9, base))
 
             if contradicting or prop.disagree > prop.agree:
                 status = ClaimStatus.CONTESTED
-            elif has_critic_hit:
+            elif partial_hit:
                 status = ClaimStatus.UNVERIFIED
-            elif prop.agree >= 2 and prop.disagree == 0:
+            elif (
+                prop.agree >= 2
+                and prop.disagree == 0
+                and len(supporting) >= 2
+            ):
                 status = ClaimStatus.LIKELY_TRUE
             else:
                 status = ClaimStatus.UNVERIFIED
@@ -129,7 +157,7 @@ class SynthesizerAgent(Agent):
                 claim = Claim(
                     statement=prop.statement,
                     status=status,
-                    confidence=max(0.0, min(1.0, confidence)),
+                    confidence=confidence,
                     supporting_evidence=supporting,
                     contradicting_evidence=contradicting,
                     affected_entities=list(pack.entities),
@@ -146,5 +174,37 @@ class SynthesizerAgent(Agent):
             claims.append(claim)
 
         state.final_claims = claims
+
+        # Always append a synthesizer message so the discussion transcript has
+        # a closing entry even when no claims survive evidence gating.
+        if claims:
+            digest_lines = [f"Synthesizer produced {len(claims)} claim(s)."]
+            for c in claims[:5]:
+                digest_lines.append(
+                    f"- ({c.status.value}, conf={c.confidence:.2f}) {c.statement}"
+                )
+            digest = "\n".join(digest_lines)
+            digest_refs: list[EvidenceRef] = []
+            seen: set[str] = set()
+            for c in claims:
+                for ev in c.supporting_evidence:
+                    key = str(ev.source_id)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    digest_refs.append(ev)
+        else:
+            digest = "Synthesizer produced 0 claims (no candidates survived evidence gating)."
+            digest_refs = []
+
+        state.messages.append(
+            AgentMessage(
+                discussion_id=state.discussion_id,
+                agent_id="synthesizer",
+                role=AgentRole.SYNTHESIZER,
+                content=digest,
+                evidence_refs=digest_refs,
+            )
+        )
         logger.info("synth_claims_built", count=len(claims))
         return state

@@ -1,13 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
+import { Chip } from "@/components/ui/Chip";
 import { Panel } from "@/components/ui/Panel";
 import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { api } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
+import { useDebateStore } from "@/store/debate";
 
 const STATE_COLOR: Record<string, string> = {
   idle: "var(--ink-3)",
@@ -25,6 +29,26 @@ export function OpsTheater() {
   const D = ARGUS_DATA;
   const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
+  const discussionId = useDebateStore((s) => s.discussionId);
+  const topic = useDebateStore((s) => s.topic);
+
+  const liveDiscussion = useQuery({
+    queryKey: ["discussion", discussionId],
+    queryFn: () => api.discussion(discussionId as string),
+    enabled: !!discussionId,
+    refetchInterval: 2000,
+    retry: 0,
+    staleTime: 30_000,
+  });
+
+  const liveMessages = useQuery({
+    queryKey: ["discussion-messages", discussionId],
+    queryFn: () => api.discussionMessages(discussionId as string),
+    enabled: !!discussionId,
+    refetchInterval: 2000,
+    retry: 0,
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (paused) return;
@@ -43,14 +67,29 @@ export function OpsTheater() {
     };
   });
 
+  const isLive = !!discussionId;
+  const apiHealthy = isLive && (liveDiscussion.isSuccess || liveMessages.isSuccess);
+  const showMockChip = !isLive || (isLive && (liveDiscussion.isError || liveMessages.isError));
+  const liveMsgCount = liveMessages.data?.length ?? 0;
+  const liveStatus = liveDiscussion.data?.status;
+  const liveTopic = liveDiscussion.data?.topic ?? topic;
+
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
         code="04·OPS"
         title="Agent Ops Theater"
-        breadcrumb="// run d-2026-04-25-01 · Taiwan Strait quarantine · 7 personas"
+        breadcrumb={
+          isLive
+            ? `// run ${discussionId} · ${(liveTopic || "live").slice(0, 60)}${
+                liveStatus ? ` · ${liveStatus}` : ""
+              }`
+            : "// run d-2026-04-25-01 · Taiwan Strait quarantine · 7 personas"
+        }
         right={
-          <div className="row gap-2">
+          <div className="row gap-2" style={{ alignItems: "center" }}>
+            {showMockChip && <Chip tone="amber">offline · mock</Chip>}
+            {apiHealthy && <Chip tone="green">live · {liveMsgCount} msgs</Chip>}
             <Btn ghost active={!paused} onClick={() => setPaused(false)}>
               ▶ LIVE
             </Btn>
@@ -355,6 +394,62 @@ export function OpsTheater() {
               </div>
             </div>
           </Panel>
+
+          {isLive && (
+            <Panel
+              id="R3"
+              title="Live Messages"
+              sub={`stream · ${liveMsgCount} turns`}
+              style={{ flexShrink: 0, maxHeight: 220 }}
+            >
+              <div className="col" style={{ overflowY: "auto", maxHeight: 200 }}>
+                {liveMessages.isLoading && (
+                  <div
+                    style={{ padding: 12, fontSize: 10, color: "var(--ink-3)" }}
+                    className="tt-up"
+                  >
+                    fetching messages...
+                  </div>
+                )}
+                {liveMessages.isError && (
+                  <div
+                    style={{ padding: 12, fontSize: 10, color: "var(--amber)" }}
+                    className="tt-up"
+                  >
+                    api error · falling back to mock
+                  </div>
+                )}
+                {(liveMessages.data ?? []).slice(-12).map((m, i) => (
+                  <div
+                    key={(m.id as string | undefined) ?? i}
+                    style={{
+                      padding: "8px 12px",
+                      borderBottom: "1px solid var(--line-1)",
+                      fontSize: 10,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    <div className="row gap-2" style={{ alignItems: "baseline" }}>
+                      <span className="amber tt-up" style={{ fontSize: 9 }}>
+                        {m.persona_id ?? m.agent_id ?? m.role ?? "agent"}
+                      </span>
+                      <span className="tab muted" style={{ fontSize: 9 }}>
+                        {m.created_at?.slice(11, 19) ?? ""}
+                      </span>
+                    </div>
+                    <div style={{ color: "var(--ink-1)", marginTop: 2 }}>
+                      {(m.content ?? "").slice(0, 180)}
+                    </div>
+                  </div>
+                ))}
+                {!liveMessages.isLoading && (liveMessages.data?.length ?? 0) === 0 && (
+                  <div style={{ padding: 12, fontSize: 10, color: "var(--ink-3)" }}>
+                    waiting for first turn...
+                  </div>
+                )}
+              </div>
+            </Panel>
+          )}
 
           <Panel id="R2" title="Persona Activity" sub="live · thought / tool / speak" style={{ flex: 1 }}>
             <div className="col" style={{ overflowY: "auto" }}>

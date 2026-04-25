@@ -37,6 +37,21 @@ export type DiscussionSummary = {
   id: string;
   topic?: string;
   status?: string;
+  vertical?: string;
+  created_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  evidence_count?: number;
+  claim_count?: number;
+};
+
+export type DiscussionMessage = {
+  id?: string;
+  agent_id?: string;
+  role?: string;
+  content?: string;
+  evidence_refs?: unknown[];
+  persona_id?: string;
   created_at?: string;
 };
 
@@ -64,6 +79,15 @@ export const api = {
   entity: (id: string) => request<EntitySummary>(`/entities/${id}`),
   sources: () => request<SourceSummary[]>("/sources"),
   source: (id: string) => request<SourceSummary>(`/sources/${id}`),
+  discussions: () => request<DiscussionSummary[]>("/discussions"),
   discussion: (id: string) => request<DiscussionSummary>(`/discussions/${id}`),
-  discussionMessages: (id: string) => request<unknown[]>(`/discussions/${id}/messages`),
+  discussionMessages: (id: string) =>
+    request<DiscussionMessage[]>(`/discussions/${id}/messages`),
+  discussionClaims: (id: string) =>
+    request<ClaimSummary[]>(`/discussions/${id}/claims`),
+  startDiscussion: (body: { topic: string; vertical?: string }) =>
+    request<{ id: string; status: string }>("/discussions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };

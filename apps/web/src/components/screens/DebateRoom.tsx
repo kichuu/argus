@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { AsciiSpinner } from "@/components/ui/AsciiSpinner";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
@@ -13,6 +14,7 @@ import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { SectionHeader } from "@/components/ui/SectionHeader";
 import { Segmented } from "@/components/ui/Segmented";
 import { useTypewriter } from "@/hooks/useTypewriter";
+import { api } from "@/lib/api";
 import { ARGUS_DATA, type Persona, type TranscriptMsg } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
 
@@ -180,9 +182,22 @@ export function DebateRoom() {
   const setPaused = useDebateStore((s) => s.setPaused);
   const speed = useDebateStore((s) => s.speed);
   const setSpeed = useDebateStore((s) => s.setSpeed);
+  const discussionId = useDebateStore((s) => s.discussionId);
 
   const [filterPersona, setFilterPersona] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+
+  const liveMessages = useQuery({
+    queryKey: ["discussion-messages", discussionId],
+    queryFn: () => api.discussionMessages(discussionId as string),
+    enabled: !!discussionId,
+    refetchInterval: 2000,
+    retry: 0,
+    staleTime: 30_000,
+  });
+  const liveData = liveMessages.data;
+  const isLive = !!discussionId && (liveData?.length ?? 0) > 0;
+  const showMockChip = !discussionId || liveMessages.isError || (liveData?.length ?? 0) === 0;
 
   useEffect(() => {
     if (paused) return;

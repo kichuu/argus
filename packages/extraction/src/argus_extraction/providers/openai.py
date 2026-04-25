@@ -76,10 +76,22 @@ class OpenAIProvider(Provider):
             except TypeError:
                 pass
 
+        # Reasoning models (o1/o3/o4*) use max_completion_tokens, not max_tokens.
+        is_reasoning = _is_reasoning_model(model)
+        token_kwarg = (
+            {"max_completion_tokens": max_tokens}
+            if is_reasoning
+            else {"max_tokens": max_tokens}
+        )
         completion = await self._client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=max_tokens,
+            **token_kwarg,
         )
         content = completion.choices[0].message.content or ""
         return content.strip()
+
+
+def _is_reasoning_model(model: str) -> bool:
+    m = model.lower().strip()
+    return m.startswith("o1") or m.startswith("o3") or m.startswith("o4")

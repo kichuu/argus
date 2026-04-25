@@ -74,8 +74,19 @@ class CriticAgent(Agent):
                         continue
                     pairs.append((eid, sentence, span.verbatim_span))
 
+        # Always emit at least one critic message so downstream consumers see
+        # an audit trail entry even when there are no persona citations to audit.
         if not pairs:
             logger.info("critic_no_pairs")
+            state.messages.append(
+                AgentMessage(
+                    discussion_id=state.discussion_id,
+                    agent_id="critic",
+                    role=AgentRole.CRITIC,
+                    content="Critic audit: 0 (assertion, evidence) pairs to review.",
+                    evidence_refs=[],
+                )
+            )
             return state
 
         pairs_block = "\n".join(
@@ -84,26 +95,35 @@ class CriticAgent(Agent):
         )
         prompt = _CRITIC_PROMPT.format(pairs=pairs_block)
 
+        report: _CriticReport | None = None
         try:
-            report = await self.provider.structured_extract(prompt, _CriticReport, self.model)
+            result = await self.provider.structured_extract(prompt, _CriticReport, self.model)
+            if isinstance(result, _CriticReport):
+                report = result
+            else:
+                state.errors.append("critic: provider returned wrong type")
         except Exception as e:
             logger.error("critic_llm_failed", error=str(e))
             state.errors.append(f"critic: {e}")
-            return state
 
-        if not isinstance(report, _CriticReport):
-            state.errors.append("critic: provider returned wrong type")
-            return state
+        verdicts = report.verdicts if report is not None else []
+        rejected = [v for v in verdicts if v.verdict.lower() == "no"]
+        partial = [v for v in verdicts if v.verdict.lower() == "partial"]
+        flagged = rejected + partial
 
-        flagged = [
-            v for v in report.verdicts if v.verdict.lower() in {"no", "partial"}
+        summary_lines = [
+            f"Critic audit: {len(flagged)}/{len(pairs)} pairs flagged "
+            f"({len(rejected)} rejected, {len(partial)} partial)."
         ]
-
-        summary_lines = [f"Critic audit: {len(flagged)}/{len(pairs)} pairs flagged."]
         for v in flagged:
             summary_lines.append(
                 f"- [{v.verdict}] [ev:{v.evidence_id}] :: {v.assertion!r} -- {v.reason}"
             )
+        # Tag rejected evidence ids with a machine-readable marker so the
+        # synthesizer can drop any candidate claim that relies on them.
+        if rejected:
+            ids_marker = ",".join(v.evidence_id for v in rejected)
+            summary_lines.append(f"REJECTED_EVIDENCE_IDS: {ids_marker}")
         summary = "\n".join(summary_lines)
 
         cited_refs = [
