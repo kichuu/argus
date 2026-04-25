@@ -21,16 +21,24 @@ class _CriticReport(BaseModel):
     verdicts: list[_CriticVerdict] = Field(default_factory=list)
 
 
-_CRITIC_PROMPT = """You audit whether each cited evidence span actually supports the
-assertion that cites it. For every (assertion, evidence) pair below, return a verdict:
-- "yes": span clearly supports the assertion.
-- "partial": span is related but does not fully establish the assertion.
-- "no": span does not support the assertion (or contradicts it).
+_CRITIC_PROMPT = """You audit whether each cited evidence span supports the assertion
+that cites it. The standard is "reasonable grounding", not "definitive proof" — a
+forecast / analyst projection / news report can support an assertion that paraphrases
+or summarizes its content.
+
+For every (assertion, evidence) pair below, return a verdict:
+- "yes": span supports the assertion (the assertion is a fair paraphrase, summary,
+  or reasonable inference from the span).
+- "partial": span is topically related but the assertion goes beyond what the span
+  warrants (overclaims, adds unstated specifics, or only partly overlaps).
+- "no": span is unrelated, or directly contradicts the assertion.
 
 Pairs to audit:
 {pairs}
 
-Return JSON. Be strict; prefer "partial" over "yes" when in doubt."""
+Return JSON. When the assertion clearly hedges ("forecasts indicate", "analysts
+expect", "is projected to") and the span actually contains a forecast/analysis on
+that topic, return "yes". Reserve "no" for unrelated content or outright contradiction."""
 
 
 class CriticAgent(Agent):

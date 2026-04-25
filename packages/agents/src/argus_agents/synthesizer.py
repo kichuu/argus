@@ -167,15 +167,18 @@ class SynthesizerAgent(Agent):
 
             if contradicting or prop.disagree > prop.agree:
                 status = ClaimStatus.CONTESTED
-            elif partial_hit:
-                status = ClaimStatus.UNVERIFIED
             elif (
                 prop.agree >= 2
                 and prop.disagree == 0
                 and len(supporting) >= 2
+                and not partial_hit
             ):
                 status = ClaimStatus.LIKELY_TRUE
+            elif partial_hit and len(supporting) < 2:
+                status = ClaimStatus.UNVERIFIED
             else:
+                # Single solid supporting evidence with no contradiction → ship as
+                # unverified rather than discard. Confidence carries the caveat.
                 status = ClaimStatus.UNVERIFIED
 
             try:
