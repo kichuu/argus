@@ -9,12 +9,15 @@ import { Dot } from "@/components/ui/Dot";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { SectionHeader } from "@/components/ui/SectionHeader";
+import { useQuery } from "@tanstack/react-query";
 import { useDiscussionStream, type StreamMode } from "@/hooks/useDiscussionStream";
 import {
   api,
   type AgentMessage,
   type Claim,
   type DiscussionStatus as DStatus,
+  type EvidenceRef,
+  type Source,
 } from "@/lib/api";
 import { useDebateStore } from "@/store/debate";
 
@@ -120,6 +123,173 @@ function renderContent(content: string, refs: AgentMessage["evidence_refs"]): Re
     );
   }
   return <>{parts}</>;
+}
+
+// Lazy-fetches one Source by id (cached + dedupped via react-query) and
+// renders a single row showing publisher · domain · title · trust + the
+// cited verbatim span. Used by EvidenceList below.
+function SourceRefRow({
+  index,
+  ref,
+}: {
+  index: number;
+  ref: EvidenceRef;
+}) {
+  const q = useQuery<Source>({
+    queryKey: ["source", ref.source_id],
+    queryFn: () => api.source(ref.source_id, { include_text: false }),
+    staleTime: 5 * 60_000,
+    retry: 0,
+  });
+  const src = q.data;
+  const host = (() => {
+    try {
+      return src?.url ? new URL(src.url).hostname.replace(/^www\./, "") : "";
+    } catch {
+      return "";
+    }
+  })();
+  return (
+    <div
+      style={{
+        padding: "8px 10px",
+        borderTop: "1px solid var(--line-1)",
+        display: "flex",
+        gap: 8,
+        alignItems: "flex-start",
+      }}
+    >
+      <span
+        className="tab"
+        style={{
+          fontSize: 9,
+          color: "var(--ink-2)",
+          minWidth: 18,
+          textAlign: "right",
+          marginTop: 1,
+        }}
+      >
+        [{index}]
+      </span>
+      <span
+        className="tt-up"
+        style={{
+          fontSize: 9,
+          color: "var(--ink-1)",
+          border: "1px solid var(--line-2)",
+          padding: "0 4px",
+          marginTop: 1,
+        }}
+      >
+        T{ref.trust_tier}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {q.isLoading && (
+          <span style={{ fontSize: 11, color: "var(--ink-3)" }}>loading source…</span>
+        )}
+        {q.isError && (
+          <span style={{ fontSize: 11, color: "var(--red)" }}>
+            source {ref.source_id.slice(0, 8)} unavailable
+          </span>
+        )}
+        {src && (
+          <>
+            <div className="row gap-2" style={{ alignItems: "baseline", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 11, color: "var(--ink-0)", fontWeight: 500 }}>
+                {src.title || "(untitled)"}
+              </span>
+              {host && (
+                <span className="tt-up muted" style={{ fontSize: 9 }}>
+                  {host}
+                </span>
+              )}
+              {src.publisher && (
+                <span className="tt-up muted" style={{ fontSize: 9 }}>
+                  · {src.publisher}
+                </span>
+              )}
+              {src.url && (
+                <a
+                  href={src.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="tt-up"
+                  style={{
+                    fontSize: 9,
+                    color: "var(--amber)",
+                    textDecoration: "none",
+                    border: "1px solid var(--amber-dim)",
+                    padding: "0 5px",
+                    marginLeft: "auto",
+                  }}
+                >
+                  ↗ open
+                </a>
+              )}
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--ink-2)",
+                marginTop: 4,
+                fontStyle: "italic",
+                lineHeight: 1.45,
+                fontFamily: "'IBM Plex Sans', 'Inter', system-ui, sans-serif",
+              }}
+            >
+              &ldquo;{ref.verbatim_span}&rdquo;
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceList({
+  refs,
+  label,
+  defaultOpen = false,
+}: {
+  refs: EvidenceRef[];
+  label: string;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (refs.length === 0) return null;
+  return (
+    <div style={{ marginTop: 8, border: "1px solid var(--line-1)" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          all: "unset",
+          width: "100%",
+          padding: "6px 10px",
+          background: open ? "var(--bg-3)" : "var(--bg-2)",
+          fontFamily: "inherit",
+          cursor: "pointer",
+          display: "flex",
+          gap: 6,
+          alignItems: "center",
+        }}
+      >
+        <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-2)" }}>
+          {open ? "−" : "+"} {label}
+        </span>
+        <span className="tab" style={{ fontSize: 9, color: "var(--ink-3)" }}>
+          {refs.length}
+        </span>
+      </button>
+      {open && (
+        <div>
+          {refs.map((r, i) => (
+            <SourceRefRow key={`${r.source_id}-${i}`} index={i + 1} ref={r} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function MessageRow({ m }: { m: AgentMessage }) {
@@ -233,6 +403,9 @@ function MessageRow({ m }: { m: AgentMessage }) {
                 </span>
               )}
             </div>
+          )}
+          {m.evidence_refs.length > 0 && (
+            <EvidenceList refs={m.evidence_refs} label="sources cited by this agent" />
           )}
         </div>
       </div>
@@ -977,6 +1150,12 @@ function SynthesisPanel({ claims, topic }: { claims: Claim[]; topic: string }) {
             <div className="muted" style={{ fontSize: 9 }}>
               {c.supporting_evidence.length} support · {c.contradicting_evidence.length} contradict
             </div>
+            {c.supporting_evidence.length > 0 && (
+              <EvidenceList refs={c.supporting_evidence} label="supporting sources" />
+            )}
+            {c.contradicting_evidence.length > 0 && (
+              <EvidenceList refs={c.contradicting_evidence} label="contradicting sources" />
+            )}
           </div>
         );
       })}
