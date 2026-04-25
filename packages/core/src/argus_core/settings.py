@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     reranker_provider: str = "none"  # "none" | "cohere" | "local"
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
 
+    otel_enabled: bool = False
     phoenix_collector_endpoint: str = "http://localhost:6006"
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     otel_service_name: str = "argus"

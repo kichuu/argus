@@ -26,8 +26,11 @@ def test_setup_telemetry_with_no_endpoint(monkeypatch) -> None:
     assert instrumentation._INITIALIZED is True
 
 
-def test_log_record_carries_trace_id() -> None:
+def test_log_record_carries_trace_id(monkeypatch) -> None:
     _reset_init_flag()
+    settings = get_settings()
+    monkeypatch.setattr(settings, "otel_enabled", True)
+    monkeypatch.setattr(settings, "otel_exporter_otlp_endpoint", "")
     configure_logging()
     setup_telemetry("argus-test-trace")
     tracer = get_tracer("argus-test")

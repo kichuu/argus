@@ -19,7 +19,12 @@ _INITIALIZED: bool = False
 
 
 def setup_telemetry(service_name: str | None = None) -> None:
-    """Initialize OTel tracer + auto-instrumentations + Phoenix OpenAI tracing.
+    """Initialize OTel tracer + auto-instrumentations.
+
+    Off by default. Set OTEL_ENABLED=true to opt in (requires a reachable
+    OTLP collector at OTEL_EXPORTER_OTLP_ENDPOINT). When disabled, no
+    auto-instrumentation is registered and the global TracerProvider is
+    left untouched — zero risk of blocking on an unreachable collector.
 
     Safe to call multiple times - second+ calls are no-ops.
     """
@@ -28,6 +33,13 @@ def setup_telemetry(service_name: str | None = None) -> None:
         return
 
     settings = get_settings()
+    log = structlog.get_logger(__name__)
+
+    if not settings.otel_enabled:
+        log.info("telemetry_disabled", service=service_name or settings.otel_service_name)
+        _INITIALIZED = True
+        return
+
     name = service_name or settings.otel_service_name
 
     resource = Resource.create(
@@ -50,6 +62,7 @@ def setup_telemetry(service_name: str | None = None) -> None:
     _instrument_openai_via_phoenix(settings.phoenix_collector_endpoint, name)
     _bridge_structlog_to_traces()
 
+    log.info("telemetry_enabled", service=name, exporter=settings.otel_exporter_otlp_endpoint)
     _INITIALIZED = True
 
 
