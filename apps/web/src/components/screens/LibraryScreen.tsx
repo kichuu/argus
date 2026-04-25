@@ -1,7 +1,7 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
@@ -38,6 +38,13 @@ type LibItem = {
   personas: number;
   status: "running" | "done";
 };
+
+// Cap on how many discussion-claims fetches we'll fire. Matches the visible
+// page on a typical screen and avoids fanning out a request per row when the
+// archive grows.
+const CLAIMS_FETCH_CAP = 30;
+// Default confidence used when a discussion has zero claims yet.
+const FALLBACK_CONFIDENCE = 0.6;
 
 function relTime(iso?: string): string {
   if (!iso) return "—";
@@ -78,6 +85,38 @@ export function LibraryScreen() {
   const items: LibItem[] = apiOnline
     ? remoteItems
     : ([...ARGUS_DATA.RECENT, ...EXTRA_ITEMS] as LibItem[]);
+
+  // Fire a per-discussion claims fetch (up to CLAIMS_FETCH_CAP) so we can
+  // derive a real mean-confidence bar. Each id is keyed independently in the
+  // TanStack cache, so this is shared with /synthesis etc.
+  const liveIds = apiOnline ? remoteItems.slice(0, CLAIMS_FETCH_CAP).map((i) => i.id) : [];
+  const claimsQueries = useQueries({
+    queries: liveIds.map((id) => ({
+      queryKey: ["discussion-claims", id],
+      queryFn: () => api.discussionClaims(id),
+      enabled: apiOnline,
+      retry: 0,
+      staleTime: 60_000,
+    })),
+  });
+
+  // id -> mean confidence across that discussion's claims (or fallback).
+  const confidenceById = useMemo(() => {
+    const map = new Map<string, number>();
+    liveIds.forEach((id, idx) => {
+      const data = claimsQueries[idx]?.data ?? [];
+      const vals = data
+        .map((c) => c.confidence)
+        .filter((v): v is number => typeof v === "number" && !Number.isNaN(v));
+      if (vals.length === 0) {
+        map.set(id, FALLBACK_CONFIDENCE);
+        return;
+      }
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      map.set(id, Math.max(0, Math.min(1, mean)));
+    });
+    return map;
+  }, [liveIds, claimsQueries]);
 
   const filtered = q
     ? items.filter((i) => i.title.toLowerCase().includes(q.toLowerCase()))
@@ -185,7 +224,14 @@ export function LibraryScreen() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((d, i) => (
+                {filtered.map((d, i) => {
+                  // Live: derive from cached per-discussion claims (mean conf,
+                  // fallback to 0.6 if no claims yet). Offline: keep the
+                  // original heuristic so the mock view still has visual variety.
+                  const conf = apiOnline
+                    ? confidenceById.get(d.id) ?? FALLBACK_CONFIDENCE
+                    : 0.55 + (i % 7) * 0.04;
+                  return (
                   <tr
                     key={d.id}
                     onClick={() => {
@@ -205,7 +251,7 @@ export function LibraryScreen() {
                     <td className="tab muted">{d.id}</td>
                     <td className="tab">{d.personas}</td>
                     <td>
-                      <Bar value={0.55 + (i % 7) * 0.04} max={1} width={80} color="var(--amber)" />
+                      <Bar value={conf} max={1} width={80} color="var(--amber)" />
                     </td>
                     <td>
                       <span
@@ -220,7 +266,8 @@ export function LibraryScreen() {
                     </td>
                     <td className="tab muted">{d.time}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             )}

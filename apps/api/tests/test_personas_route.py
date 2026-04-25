@@ -82,7 +82,12 @@ def _make_persona_row(**overrides):
         "frame": "skeptical regulator",
         "description": "challenges agency claims",
         "knowledge_emphasis": ["compliance", "risk"],
+        "temperature": 0.7,
+        "redlines": [],
+        "bias": None,
+        "model_assignment": None,
         "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -253,6 +258,52 @@ async def test_delete_persona_ok(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert resp.status_code == 204
     assert session.deleted == [row]
+
+
+@pytest.mark.asyncio
+async def test_patch_persona_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FakeSession(get_map={})
+    monkeypatch.setattr(personas_route, "session_scope", _make_session_scope(session))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.patch(
+            f"/personas/{uuid4()}",
+            json={"temperature": 0.42},
+        )
+
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_persona_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    from argus_core.db.models import PersonaModel
+
+    row = _make_persona_row()
+    session = FakeSession(get_map={(PersonaModel, row.id): row})
+    monkeypatch.setattr(personas_route, "session_scope", _make_session_scope(session))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.patch(
+            f"/personas/{row.id}",
+            json={
+                "temperature": 0.42,
+                "redlines": ["no impersonation"],
+                "bias": "cautious",
+                "model_assignment": "openai:gpt-4o-mini",
+            },
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["temperature"] == 0.42
+    assert body["redlines"] == ["no impersonation"]
+    assert body["bias"] == "cautious"
+    assert body["model_assignment"] == "openai:gpt-4o-mini"
+    # Other fields untouched.
+    assert body["frame"] == row.frame
+    assert body["knowledge_emphasis"] == list(row.knowledge_emphasis)
 
 
 # ---------- /entities/{id}/relations tests ----------

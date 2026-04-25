@@ -338,41 +338,89 @@ export function SynthesisView() {
                     fill
                   />
                 </div>
-                <div
-                  style={{
-                    marginTop: 14,
-                    paddingTop: 12,
-                    borderTop: "1px solid var(--line-1)",
-                  }}
-                >
-                  {[
-                    { lbl: "Quarantine", p: 0.42, color: "var(--amber)" },
-                    { lbl: "Blockade", p: 0.18, color: "var(--red)" },
-                    { lbl: "Kinetic", p: 0.07, color: "var(--red)" },
-                    { lbl: "Status quo", p: 0.33, color: "var(--green)" },
-                  ].map((r) => (
+                {(() => {
+                  const buckets = { likely_true: 0, contested: 0, unverified: 0 };
+                  for (const c of claims) {
+                    const st = (c as { status?: string }).status;
+                    if (st === "likely_true") buckets.likely_true += 1;
+                    else if (st === "contested") buckets.contested += 1;
+                    else buckets.unverified += 1;
+                  }
+                  const n = claims.length;
+                  const distLive = isLive && n > 0;
+                  const rows = distLive
+                    ? [
+                        {
+                          lbl: "Likely true",
+                          p: buckets.likely_true / n,
+                          color: "var(--green)",
+                        },
+                        {
+                          lbl: "Contested",
+                          p: buckets.contested / n,
+                          color: "var(--amber)",
+                        },
+                        {
+                          lbl: "Unverified",
+                          p: buckets.unverified / n,
+                          color: "var(--red)",
+                        },
+                      ]
+                    : [
+                        { lbl: "Quarantine", p: 0.42, color: "var(--amber)" },
+                        { lbl: "Blockade", p: 0.18, color: "var(--red)" },
+                        { lbl: "Kinetic", p: 0.07, color: "var(--red)" },
+                        { lbl: "Status quo", p: 0.33, color: "var(--green)" },
+                      ];
+                  return (
                     <div
-                      key={r.lbl}
-                      className="row gap-2"
-                      style={{ alignItems: "center", padding: "3px 0" }}
+                      style={{
+                        marginTop: 14,
+                        paddingTop: 12,
+                        borderTop: "1px solid var(--line-1)",
+                      }}
                     >
-                      <span
-                        className="tt-up"
-                        style={{
-                          fontSize: 9,
-                          color: "var(--ink-2)",
-                          minWidth: 80,
-                        }}
+                      <div
+                        className="row gap-2"
+                        style={{ alignItems: "center", marginBottom: 6 }}
                       >
-                        {r.lbl}
-                      </span>
-                      <Bar value={r.p} max={1} width={120} color={r.color} />
-                      <span className="tab" style={{ fontSize: 10, color: "var(--ink-1)" }}>
-                        {r.p.toFixed(2)}
-                      </span>
+                        <span
+                          className="tt-up muted"
+                          style={{ fontSize: 9, flex: 1 }}
+                        >
+                          Scenario distribution{" "}
+                          {distLive ? `· ${n} claims` : ""}
+                        </span>
+                        {!distLive && <Chip tone="amber">mock</Chip>}
+                      </div>
+                      {rows.map((r) => (
+                        <div
+                          key={r.lbl}
+                          className="row gap-2"
+                          style={{ alignItems: "center", padding: "3px 0" }}
+                        >
+                          <span
+                            className="tt-up"
+                            style={{
+                              fontSize: 9,
+                              color: "var(--ink-2)",
+                              minWidth: 80,
+                            }}
+                          >
+                            {r.lbl}
+                          </span>
+                          <Bar value={r.p} max={1} width={120} color={r.color} />
+                          <span
+                            className="tab"
+                            style={{ fontSize: 10, color: "var(--ink-1)" }}
+                          >
+                            {r.p.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
               </div>
             </Panel>
 

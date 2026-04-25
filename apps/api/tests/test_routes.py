@@ -6,7 +6,7 @@ spinning up a real DB.
 """
 
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -369,6 +369,74 @@ async def test_ingest_source_plain_text(monkeypatch: pytest.MonkeyPatch) -> None
     assert body["status"] == "ingested"
     assert body["chars"] == len("hello plain world")
     assert session.added[0].raw_text == "hello plain world"
+
+
+@pytest.mark.asyncio
+async def test_sources_stats(monkeypatch: pytest.MonkeyPatch) -> None:
+    """/sources/stats aggregates total / last_24h / trust_tier / publishers / spark."""
+    now = datetime.now(UTC)
+    # Two recent rows for the spark + last_24h count, one stale.
+    recent_a = (now - timedelta(minutes=30),)
+    recent_b = (now - timedelta(hours=2),)
+
+    class _ScalarOneResult:
+        def __init__(self, value):
+            self._v = value
+
+        def scalar_one(self):
+            return self._v
+
+    class _RowsResult:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return list(self._rows)
+
+    # Sequence of execute() returns matches the order of queries in source_stats():
+    #   1) total count          -> 247
+    #   2) last_24h count       -> 2
+    #   3) trust_tier groupby   -> [(1, 42), (2, 180), (3, 18), (4, 7)]
+    #   4) publisher groupby    -> [("www.bbc.com", 24), ("www.reuters.com", 18)]
+    #   5) recent fetched_at    -> [(recent_a,), (recent_b,)]
+    responses = [
+        _ScalarOneResult(247),
+        _ScalarOneResult(2),
+        _RowsResult([(1, 42), (2, 180), (3, 18), (4, 7)]),
+        _RowsResult([("www.bbc.com", 24), ("www.reuters.com", 18)]),
+        _RowsResult([recent_a, recent_b]),
+    ]
+
+    class _StatsSession(FakeSession):
+        def __init__(self):
+            super().__init__()
+            self._idx = 0
+
+        async def execute(self, stmt):  # type: ignore[override]
+            r = responses[self._idx]
+            self._idx += 1
+            return r
+
+    session = _StatsSession()
+    monkeypatch.setattr(sources_route, "session_scope", _make_session_scope(session))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/sources/stats")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 247
+    assert body["last_24h"] == 2
+    # 2 / 24 = 0.0833... rounded to 0.08
+    assert body["events_per_hour_24h"] == 0.08
+    assert body["by_trust_tier"] == {"1": 42, "2": 180, "3": 18, "4": 7}
+    assert body["by_publisher_top10"][0] == {"name": "www.bbc.com", "count": 24}
+    assert body["by_publisher_top10"][1] == {"name": "www.reuters.com", "count": 18}
+    assert body["duplicates_blocked_24h_est"] is None
+    assert isinstance(body["spark_24h"], list)
+    assert len(body["spark_24h"]) == 24
+    assert sum(body["spark_24h"]) == 2  # both recent rows fell inside the window
 
 
 @pytest.mark.asyncio

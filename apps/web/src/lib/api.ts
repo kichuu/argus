@@ -89,8 +89,23 @@ export type PersonaSummary = {
   frame: string;
   description: string;
   knowledge_emphasis: string[];
+  temperature?: number;
+  redlines?: string[];
+  bias?: string | null;
+  model_assignment?: string | null;
   created_at?: string;
+  updated_at?: string;
 };
+
+export type PersonaPatch = Partial<{
+  frame: string;
+  description: string;
+  knowledge_emphasis: string[];
+  temperature: number;
+  redlines: string[];
+  bias: string | null;
+  model_assignment: string | null;
+}>;
 
 export type SuggestedTopic = { id: string; title: string; rationale?: string };
 export type SuggestedTopicsResponse = {
@@ -216,10 +231,19 @@ export const api = {
     frame: string;
     description: string;
     knowledge_emphasis: string[];
+    temperature?: number;
+    redlines?: string[];
+    bias?: string | null;
+    model_assignment?: string | null;
   }) =>
     request<PersonaSummary>("/personas", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  updatePersona: (id: string, patch: PersonaPatch) =>
+    request<PersonaSummary>(`/personas/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
     }),
   deletePersona: (id: string) =>
     request<void>(`/personas/${id}`, { method: "DELETE" }),

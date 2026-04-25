@@ -23,7 +23,12 @@ class Persona(BaseModel):
     frame: str = Field(min_length=3, max_length=120)
     description: str
     knowledge_emphasis: list[str] = Field(default_factory=list)
+    temperature: float = 0.7
+    redlines: list[str] = Field(default_factory=list)
+    bias: str | None = None
+    model_assignment: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @model_validator(mode="after")
     def reject_impersonation(self) -> Self:

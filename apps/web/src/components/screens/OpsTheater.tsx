@@ -200,8 +200,11 @@ export function OpsTheater() {
   // (a) no discussion launched yet and (b) a launched discussion with zero
   // messages so far.
   const useDerived = isLive && liveMsgCount > 0;
-  // `tick` keeps the relative-age readouts ticking even between polls.
-  const nowMs = Date.now() + tick * 0;
+  // Recompute `nowMs` on every tick so the live age readout under the active
+  // node refreshes between polls. We read `tick` to thread a dep through; the
+  // value itself isn't used.
+  void tick;
+  const nowMs = Date.now();
   const { nodes: derivedNodes, activeAgeMsByNode } = useDerived
     ? buildLiveOrchestration(liveMessages.data ?? [], nowMs)
     : { nodes: [] as OrchestrationNode[], activeAgeMsByNode: {} };
@@ -339,13 +342,22 @@ export function OpsTheater() {
                 }),
               )}
 
-              {D.ORCHESTRATION.map((n) => {
+              {orchestrationNodes.map((n) => {
                 const x = n.x * W;
                 const y = n.y * H;
                 const c = STATE_COLOR[n.state];
                 const isPersona = n.id.startsWith("p-");
                 const w = isPersona ? 92 : 110;
                 const h = 32;
+                const ageMs = useDerived
+                  ? activeAgeMsByNode[n.id as LiveNodeId]
+                  : undefined;
+                const ageLabel =
+                  ageMs != null && Number.isFinite(ageMs) && ageMs >= 0
+                    ? ageMs < 1000
+                      ? `${ageMs}ms`
+                      : `${(ageMs / 1000).toFixed(1)}s`
+                    : null;
                 return (
                   <g key={n.id} style={{ cursor: "pointer" }}>
                     <rect
@@ -384,6 +396,18 @@ export function OpsTheater() {
                             ? "◉ speak"
                             : "○ idle"}
                     </text>
+                    {ageLabel && (
+                      <text
+                        x={x}
+                        y={y + h / 2 + 10}
+                        fontFamily="JetBrains Mono"
+                        fontSize="8"
+                        fill="var(--ink-2)"
+                        textAnchor="middle"
+                      >
+                        {ageLabel}
+                      </text>
+                    )}
                     {n.state !== "idle" && (
                       <circle cx={x + w / 2 - 6} cy={y - h / 2 + 6} r="2.5" fill={c}>
                         <animate

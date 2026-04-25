@@ -55,6 +55,13 @@ function SliderRow({ label, value, color }: { label: string; value: number; colo
   );
 }
 
+const MODEL_OPTIONS = [
+  "openai:gpt-4o",
+  "openai:gpt-4o-mini",
+  "openai:gpt-4.1",
+  "openai:o4-mini",
+] as const;
+
 export function PersonaDesigner() {
   const D = ARGUS_DATA;
   const qc = useQueryClient();
@@ -65,6 +72,14 @@ export function PersonaDesigner() {
   const [draftEmphasis, setDraftEmphasis] = useState<string>(
     D.PERSONAS[0].beliefs.join(", "),
   );
+  const [draftTemperature, setDraftTemperature] = useState<number>(
+    D.PERSONAS[0].temperature,
+  );
+  const [draftRedlines, setDraftRedlines] = useState<string>(
+    D.PERSONAS[0].redlines.join("\n"),
+  );
+  const [draftBias, setDraftBias] = useState<string>(D.PERSONAS[0].bias);
+  const [draftModel, setDraftModel] = useState<string>(D.PERSONAS[0].model);
 
   const personasQuery = useQuery({
     queryKey: ["personas"],
@@ -82,8 +97,33 @@ export function PersonaDesigner() {
   );
 
   const createMutation = useMutation({
-    mutationFn: (body: { frame: string; description: string; knowledge_emphasis: string[] }) =>
-      api.createPersona(body),
+    mutationFn: (body: {
+      frame: string;
+      description: string;
+      knowledge_emphasis: string[];
+      temperature: number;
+      redlines: string[];
+      bias: string | null;
+      model_assignment: string | null;
+    }) => api.createPersona(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["personas"] });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (vars: {
+      id: string;
+      patch: {
+        frame: string;
+        description: string;
+        knowledge_emphasis: string[];
+        temperature: number;
+        redlines: string[];
+        bias: string | null;
+        model_assignment: string | null;
+      };
+    }) => api.updatePersona(vars.id, vars.patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["personas"] });
     },
@@ -104,6 +144,10 @@ export function PersonaDesigner() {
     setDraftFrame(p.frame);
     setDraftDescription(p.description);
     setDraftEmphasis(p.knowledge_emphasis.join(", "));
+    setDraftTemperature(p.temperature ?? 0.7);
+    setDraftRedlines((p.redlines ?? []).join("\n"));
+    setDraftBias(p.bias ?? "");
+    setDraftModel(p.model_assignment ?? MODEL_OPTIONS[0]);
   }, [savedSel, savedPersonas]);
 
   const onSelectMockPersona = (p: Persona) => {
@@ -112,18 +156,39 @@ export function PersonaDesigner() {
     setDraftFrame(p.role);
     setDraftDescription(p.bias);
     setDraftEmphasis(p.beliefs.join(", "));
+    setDraftTemperature(p.temperature);
+    setDraftRedlines(p.redlines.join("\n"));
+    setDraftBias(p.bias);
+    setDraftModel(p.model);
   };
 
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+  const saveDisabled = !apiOnline || isSaving;
+
   const onSave = () => {
+    if (!apiOnline) return;
     const knowledge_emphasis = draftEmphasis
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    createMutation.mutate({
+    const redlines = draftRedlines
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const payload = {
       frame: draftFrame || sel.role,
       description: draftDescription || sel.bias,
       knowledge_emphasis,
-    });
+      temperature: draftTemperature,
+      redlines,
+      bias: draftBias.trim() ? draftBias.trim() : null,
+      model_assignment: draftModel || null,
+    };
+    if (savedSel) {
+      updateMutation.mutate({ id: savedSel, patch: payload });
+    } else {
+      createMutation.mutate(payload);
+    }
   };
 
   const onDelete = (id: string) => {
@@ -144,11 +209,12 @@ export function PersonaDesigner() {
         right={
           <div className="row gap-2" style={{ alignItems: "center" }}>
             <MockBadge online={apiOnline} loading={status.loading} />
+            {!apiOnline && <Chip tone="amber">offline · save disabled</Chip>}
             <Btn ghost>+ ADD PERSONA</Btn>
             <Btn ghost>◫ TEMPLATE LIBRARY</Btn>
             <Btn ghost>◐ AUTO-BALANCE</Btn>
-            <Btn primary onClick={onSave}>
-              {createMutation.isPending ? "SAVING…" : "SAVE CAST →"}
+            <Btn primary onClick={onSave} disabled={saveDisabled}>
+              {isSaving ? "SAVING…" : savedSel ? "UPDATE PERSONA →" : "SAVE CAST →"}
             </Btn>
           </div>
         }
@@ -177,7 +243,7 @@ export function PersonaDesigner() {
                 · {savedPersonas.length} on file
               </span>
               <div style={{ flex: 1 }} />
-              {createMutation.isError && (
+              {(createMutation.isError || updateMutation.isError) && (
                 <Chip tone="amber">save failed</Chip>
               )}
             </div>
@@ -483,9 +549,73 @@ export function PersonaDesigner() {
                 outline: "none",
               }}
             />
-            <Btn primary style={{ marginTop: 10 }} onClick={onSave}>
-              {createMutation.isPending ? "SAVING…" : "SAVE PERSONA"}
+            <div
+              className="tt-up"
+              style={{ fontSize: 9, color: "var(--ink-2)", margin: "10px 0 6px" }}
+            >
+              BIAS
+            </div>
+            <input
+              value={draftBias}
+              onChange={(e) => setDraftBias(e.target.value)}
+              placeholder="short bias label, e.g. cautious-regulator"
+              style={{
+                background: "var(--bg-0)",
+                border: "1px solid var(--line-1)",
+                color: "var(--ink-0)",
+                padding: 8,
+                fontFamily: "inherit",
+                fontSize: 11,
+                width: "100%",
+                outline: "none",
+              }}
+            />
+            <div
+              className="tt-up"
+              style={{ fontSize: 9, color: "var(--ink-2)", margin: "10px 0 6px" }}
+            >
+              MODEL ASSIGNMENT
+            </div>
+            <select
+              value={draftModel}
+              onChange={(e) => setDraftModel(e.target.value)}
+              style={{
+                background: "var(--bg-0)",
+                border: "1px solid var(--line-1)",
+                color: "var(--ink-0)",
+                padding: 8,
+                fontFamily: "inherit",
+                fontSize: 11,
+                width: "100%",
+                outline: "none",
+              }}
+            >
+              {!MODEL_OPTIONS.includes(draftModel as (typeof MODEL_OPTIONS)[number]) && (
+                <option value={draftModel}>{draftModel}</option>
+              )}
+              {MODEL_OPTIONS.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+            <Btn
+              primary
+              style={{ marginTop: 10 }}
+              onClick={onSave}
+              disabled={saveDisabled}
+            >
+              {isSaving
+                ? "SAVING…"
+                : savedSel
+                  ? "UPDATE PERSONA"
+                  : "SAVE PERSONA"}
             </Btn>
+            {!apiOnline && (
+              <div style={{ marginTop: 6 }}>
+                <Chip tone="amber">offline · save disabled</Chip>
+              </div>
+            )}
           </div>
 
           <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
@@ -551,20 +681,30 @@ export function PersonaDesigner() {
             >
               RED LINES · constitution
             </div>
-            {sel.redlines.length === 0 ? (
-              <div className="muted" style={{ fontSize: 10 }}>
-                none — observer persona
-              </div>
-            ) : (
-              sel.redlines.map((r, i) => (
-                <div
-                  key={i}
-                  style={{ padding: "4px 0", fontSize: 11, color: "var(--ink-1)" }}
-                >
-                  ⊘ {r}
-                </div>
-              ))
-            )}
+            <textarea
+              value={draftRedlines}
+              onChange={(e) => setDraftRedlines(e.target.value)}
+              placeholder="one redline per line — lines this persona refuses to cross"
+              rows={4}
+              style={{
+                background: "var(--bg-0)",
+                border: "1px solid var(--line-1)",
+                color: "var(--ink-0)",
+                padding: 8,
+                fontFamily: "inherit",
+                fontSize: 11,
+                width: "100%",
+                outline: "none",
+                resize: "vertical",
+              }}
+            />
+            <div className="muted" style={{ fontSize: 9, marginTop: 4 }}>
+              {draftRedlines
+                .split("\n")
+                .map((s) => s.trim())
+                .filter(Boolean).length}{" "}
+              redline(s) · one per line
+            </div>
           </div>
 
           <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
@@ -574,7 +714,41 @@ export function PersonaDesigner() {
             >
               TUNING
             </div>
-            <SliderRow label="Temperature" value={sel.temperature} color={sel.colorVar} />
+            <div style={{ padding: "5px 0" }}>
+              <div
+                className="row gap-2"
+                style={{ alignItems: "center" }}
+              >
+                <span
+                  className="tt-up"
+                  style={{ fontSize: 9, color: "var(--ink-2)", minWidth: 110 }}
+                >
+                  Temperature
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={draftTemperature}
+                  onChange={(e) =>
+                    setDraftTemperature(Number(e.target.value))
+                  }
+                  style={{ flex: 1, accentColor: sel.colorVar }}
+                />
+                <span
+                  className="tab"
+                  style={{
+                    fontSize: 10,
+                    color: "var(--ink-1)",
+                    minWidth: 32,
+                    textAlign: "right",
+                  }}
+                >
+                  {draftTemperature.toFixed(2)}
+                </span>
+              </div>
+            </div>
             <SliderRow label="Aggression" value={sel.aggression} color="var(--red)" />
             <SliderRow
               label="Citation strict."

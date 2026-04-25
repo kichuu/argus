@@ -16,13 +16,32 @@ class PersonaOut(BaseModel):
     frame: str
     description: str
     knowledge_emphasis: list[str] = []
+    temperature: float = 0.7
+    redlines: list[str] = []
+    bias: str | None = None
+    model_assignment: str | None = None
     created_at: datetime
+    updated_at: datetime | None = None
 
 
 class PersonaCreate(BaseModel):
     frame: str = Field(min_length=3, max_length=120)
     description: str
     knowledge_emphasis: list[str] = Field(default_factory=list)
+    temperature: float = 0.7
+    redlines: list[str] = Field(default_factory=list)
+    bias: str | None = None
+    model_assignment: str | None = None
+
+
+class PersonaUpdate(BaseModel):
+    frame: str | None = Field(default=None, min_length=3, max_length=120)
+    description: str | None = None
+    knowledge_emphasis: list[str] | None = None
+    temperature: float | None = None
+    redlines: list[str] | None = None
+    bias: str | None = None
+    model_assignment: str | None = None
 
 
 def _to_out(row: PersonaModel) -> PersonaOut:
@@ -31,7 +50,12 @@ def _to_out(row: PersonaModel) -> PersonaOut:
         frame=row.frame,
         description=row.description,
         knowledge_emphasis=list(row.knowledge_emphasis or []),
+        temperature=getattr(row, "temperature", 0.7) or 0.7,
+        redlines=list(getattr(row, "redlines", []) or []),
+        bias=getattr(row, "bias", None),
+        model_assignment=getattr(row, "model_assignment", None),
         created_at=row.created_at,
+        updated_at=getattr(row, "updated_at", None),
     )
 
 
@@ -71,8 +95,31 @@ async def create_persona(body: PersonaCreate) -> PersonaOut:
             frame=body.frame,
             description=body.description,
             knowledge_emphasis=list(body.knowledge_emphasis),
+            temperature=body.temperature,
+            redlines=list(body.redlines),
+            bias=body.bias,
+            model_assignment=body.model_assignment,
         )
         session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        return _to_out(row)
+
+
+@router.patch("/{persona_id}", response_model=PersonaOut)
+async def update_persona(persona_id: UUID, body: PersonaUpdate) -> PersonaOut:
+    async with session_scope() as session:
+        row = await session.get(PersonaModel, persona_id)
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="persona not found"
+            )
+        patch = body.model_dump(exclude_unset=True)
+        for field, value in patch.items():
+            if field in {"knowledge_emphasis", "redlines"} and value is not None:
+                setattr(row, field, list(value))
+            else:
+                setattr(row, field, value)
         await session.flush()
         await session.refresh(row)
         return _to_out(row)

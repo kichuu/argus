@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 DENSE_VECTOR_NAME = "dense"
 SPARSE_VECTOR_NAME = "sparse"
-DENSE_DIM = 1024  # bge-large-en-v1.5
+DENSE_DIM = 1536  # text-embedding-3-small
 
 
 class VectorIndex:

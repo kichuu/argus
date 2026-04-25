@@ -186,32 +186,76 @@ export function SourcesScreen() {
             overflowY: "auto",
           }}
         >
-          <Panel id="STATS" title="Aggregate" sub="all sources · 24h">
-            <div style={{ padding: 14 }}>
-              <div className="row gap-3">
-                <div style={{ flex: 1 }}>
-                  <div className="tt-up muted" style={{ fontSize: 9 }}>
-                    EVENTS / HR
+          {(() => {
+            const statsLive = stats.isSuccess && !!stats.data;
+            const s = stats.data;
+            const eventsPerHr = statsLive ? s!.events_per_hour_24h : null;
+            const sparkData =
+              statsLive && s!.spark_24h.length > 0
+                ? s!.spark_24h
+                : [1.2, 1.4, 1.6, 1.5, 1.8, 2.1, 2.4, 2.8, 3.0, 3.2, 3.4, 3.4];
+            const total = statsLive ? s!.total : null;
+            const last24h = statsLive ? s!.last_24h : null;
+            const topPub = statsLive ? s!.by_publisher_top10[0] ?? null : null;
+            const tier1Share =
+              statsLive && s!.total > 0
+                ? ((s!.by_trust_tier["1"] ?? 0) / s!.total) * 100
+                : null;
+            return (
+              <Panel
+                id="STATS"
+                title="Aggregate"
+                sub="all sources · 24h"
+                right={<MockBadge online={statsLive} loading={stats.isLoading} />}
+              >
+                <div style={{ padding: 14 }}>
+                  <div className="row gap-3">
+                    <div style={{ flex: 1 }}>
+                      <div className="tt-up muted" style={{ fontSize: 9 }}>
+                        EVENTS / HR
+                      </div>
+                      <div
+                        className="tab"
+                        style={{ fontSize: 22, color: "var(--amber)", fontWeight: 600 }}
+                      >
+                        {eventsPerHr != null ? eventsPerHr.toFixed(2) : "3,418"}
+                      </div>
+                      <Sparkline data={sparkData} width={140} height={24} />
+                    </div>
                   </div>
-                  <div className="tab" style={{ fontSize: 22, color: "var(--amber)", fontWeight: 600 }}>
-                    3,418
+                  <div style={{ marginTop: 14 }}>
+                    <KV
+                      k="Total ingested"
+                      v={total != null ? total.toLocaleString() : "2.41M"}
+                    />
+                    <KV
+                      k="Last 24h"
+                      v={last24h != null ? last24h.toLocaleString() : "—"}
+                    />
+                    <KV
+                      k="Top publisher"
+                      v={topPub ? `${topPub.name} · ${topPub.count}` : "—"}
+                    />
+                    <KV
+                      k="Trust tier 1 share"
+                      v={
+                        tier1Share != null
+                          ? `${tier1Share.toFixed(1)}%`
+                          : "—"
+                      }
+                      vColor={tier1Share != null ? "var(--green)" : undefined}
+                    />
+                    <KV k="Avg latency p95" v={<span className="muted">— demo</span>} />
                   </div>
-                  <Sparkline
-                    data={[1.2, 1.4, 1.6, 1.5, 1.8, 2.1, 2.4, 2.8, 3.0, 3.2, 3.4, 3.4]}
-                    width={140}
-                    height={24}
-                  />
                 </div>
-              </div>
-              <div style={{ marginTop: 14 }}>
-                <KV k="Total ingested" v="2.41M" />
-                <KV k="Geocoded" v="98.2%" vColor="var(--green)" />
-                <KV k="Deduped" v="−18.4%" />
-                <KV k="Avg latency p95" v="2.1s" />
-              </div>
-            </div>
-          </Panel>
-          <Panel id="MAP" title="Coverage Map">
+              </Panel>
+            );
+          })()}
+          <Panel
+            id="MAP"
+            title="Coverage Map"
+            right={<Chip tone="amber">demo</Chip>}
+          >
             <div style={{ padding: 14, fontSize: 10, color: "var(--ink-1)" }}>
               <div style={{ marginBottom: 4 }}>
                 Indo-Pacific <span className="amber">▰▰▰▰▰▰▰▰▱▱</span> 81%
