@@ -29,6 +29,9 @@ class _FakeSession:
     async def flush(self) -> None:
         return None
 
+    async def commit(self) -> None:
+        return None
+
     async def get(self, _model: Any, ident: UUID) -> Any:
         return self.rows_by_id.get(ident)
 

@@ -143,7 +143,11 @@ async def start_discussion(
         status=DiscussionStatus.PLANNING.value,
     )
     session.add(row)
-    await session.flush()
+    # Explicit commit so the row is visible to the background task / Temporal
+    # worker that runs after this route returns. flush() alone keeps the row
+    # in-transaction; the dependency's session_scope commit happens AFTER
+    # FastAPI starts the background task, racing it.
+    await session.commit()
 
     workflow_id = f"discussion-{discussion_id}"
     payload = {
