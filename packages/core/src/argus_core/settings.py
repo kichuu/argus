@@ -54,7 +54,10 @@ class Settings(BaseSettings):
     huggingface_token: str = ""
     cohere_api_key: str = ""
 
+    embedding_provider: str = "openai"  # "openai" | "sentence_transformers"
     embedding_model: str = "BAAI/bge-large-en-v1.5"
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimensions: int = 1024  # matches Qdrant collection DENSE_SIZE
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
 
     phoenix_collector_endpoint: str = "http://localhost:6006"
