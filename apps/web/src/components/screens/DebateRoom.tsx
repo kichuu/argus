@@ -1,5 +1,4 @@
 "use client";
-import { useQueries } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AsciiSpinner } from "@/components/ui/AsciiSpinner";
@@ -10,7 +9,7 @@ import { Dot } from "@/components/ui/Dot";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { SectionHeader } from "@/components/ui/SectionHeader";
-import { useDiscussionPolling } from "@/hooks/useDiscussionPolling";
+import { useDiscussionStream, type StreamMode } from "@/hooks/useDiscussionStream";
 import {
   api,
   type AgentMessage,
@@ -237,30 +236,25 @@ function StatusPill({ s }: { s: DStatus }) {
   );
 }
 
-function SynthesisPanel({ claimIds }: { claimIds: string[] }) {
-  const queries = useQueries({
-    queries: claimIds.map((id) => ({
-      queryKey: ["claim", id],
-      queryFn: () => api.claim(id),
-      staleTime: 60_000,
-    })),
-  });
-  const ready = queries.filter((q) => q.isSuccess).map((q) => q.data as Claim);
-  const loading = queries.some((q) => q.isLoading);
+function ModeIndicator({ mode }: { mode: StreamMode }) {
+  const tone = mode === "ws" ? "green" : "amber";
+  const label = mode === "ws" ? "LIVE" : "POLL";
+  return (
+    <Chip tone={tone}>
+      <Dot tone={tone} pulse={mode === "ws"} /> {label}
+    </Chip>
+  );
+}
 
+function SynthesisPanel({ claims }: { claims: Claim[] }) {
   return (
     <div className="col" style={{ overflowY: "auto" }}>
-      {claimIds.length === 0 && (
+      {claims.length === 0 && (
         <div style={{ padding: 14, fontSize: 11, color: "var(--ink-3)" }}>
           synthesis produced no final claims.
         </div>
       )}
-      {loading && claimIds.length > 0 && (
-        <div style={{ padding: 14, fontSize: 10, color: "var(--ink-3)" }}>
-          <AsciiSpinner /> loading claims...
-        </div>
-      )}
-      {ready.map((c) => {
+      {claims.map((c) => {
         const color =
           c.status === "likely_true"
             ? "var(--green)"
@@ -313,12 +307,14 @@ export function DebateRoom() {
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
 
-  const { status, messages } = useDiscussionPolling(discussionId);
-  const messageList = messages.data ?? [];
-  const detail = status.data;
-  const sStatus: DStatus = detail?.status ?? "planning";
-  const isTerminal = detail ? TERMINAL.includes(detail.status) : false;
-  const failed = detail?.status === "failed";
+  const stream = useDiscussionStream(discussionId);
+  const messageList = stream.messages;
+  const sStatus: DStatus = stream.status ?? "planning";
+  const hasStatus = stream.status !== null;
+  const isTerminal = hasStatus ? TERMINAL.includes(sStatus) : false;
+  const failed = stream.status === "failed";
+  const messagesCount = messageList.length;
+  const finalClaimIds = useMemo(() => stream.claims.map((c) => c.id), [stream.claims]);
 
   useEffect(() => {
     if (transcriptRef.current) {
@@ -342,7 +338,7 @@ export function DebateRoom() {
   };
 
   const breadcrumb = discussionId
-    ? `// d-${discussionId.slice(0, 8)} · "${detail?.topic ?? topic}"`
+    ? `// d-${discussionId.slice(0, 8)} · "${topic}"`
     : `// new deliberation`;
 
   return (
@@ -353,13 +349,14 @@ export function DebateRoom() {
         breadcrumb={breadcrumb}
         right={
           <div className="row gap-2" style={{ alignItems: "center" }}>
-            {detail && <StatusPill s={sStatus} />}
-            {detail && (
+            {discussionId && <ModeIndicator mode={stream.mode} />}
+            {hasStatus && <StatusPill s={sStatus} />}
+            {hasStatus && (
               <span className="muted tt-up" style={{ fontSize: 9 }}>
-                {detail.messages_count} msg{detail.messages_count === 1 ? "" : "s"}
+                {messagesCount} msg{messagesCount === 1 ? "" : "s"}
               </span>
             )}
-            {isTerminal && detail && detail.final_claim_ids.length > 0 && (
+            {isTerminal && finalClaimIds.length > 0 && (
               <Btn primary onClick={() => router.push("/synthesis")}>
                 VIEW SYNTHESIS →
               </Btn>
@@ -458,15 +455,10 @@ export function DebateRoom() {
                 ── enter a topic and hit RUN to convene the council ──
               </div>
             )}
-            {discussionId && status.isError && (
-              <div style={{ padding: 24, fontSize: 11, color: "var(--red)" }}>
-                ⚠ failed to fetch status: {String(status.error)}
-              </div>
-            )}
             {messageList.map((m) => (
               <MessageRow key={m.id} m={m} />
             ))}
-            {discussionId && !isTerminal && (
+            {discussionId && hasStatus && !isTerminal && (
               <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--ink-3)" }}>
                 <AsciiSpinner /> {sStatus}...
               </div>
@@ -483,9 +475,9 @@ export function DebateRoom() {
                 }}
               >
                 ── debate failed ──
-                {detail?.error && (
+                {stream.errorDetail && (
                   <div style={{ marginTop: 8, color: "var(--ink-1)", fontFamily: "inherit" }}>
-                    {detail.error}
+                    {stream.errorDetail}
                   </div>
                 )}
               </div>
@@ -528,7 +520,7 @@ export function DebateRoom() {
                   {sStatus.toUpperCase()}
                 </span>
                 <div style={{ flex: 1 }} />
-                {detail && <StatusPill s={sStatus} />}
+                {hasStatus && <StatusPill s={sStatus} />}
               </div>
               <div className="row" style={{ marginTop: 10, gap: 12, flexWrap: "wrap" }}>
                 {(["planning", "researching", "debating", "synthesizing", "completed"] as const).map(
@@ -567,11 +559,11 @@ export function DebateRoom() {
           <Panel
             id="C"
             title="Synthesis"
-            sub={detail ? `${detail.final_claim_ids.length} claim${detail.final_claim_ids.length === 1 ? "" : "s"}` : "—"}
+            sub={hasStatus ? `${finalClaimIds.length} claim${finalClaimIds.length === 1 ? "" : "s"}` : "—"}
             style={{ flex: 1, minHeight: 0 }}
           >
             {sStatus === "completed" ? (
-              <SynthesisPanel claimIds={detail?.final_claim_ids ?? []} />
+              <SynthesisPanel claims={stream.claims} />
             ) : (
               <div style={{ padding: 14, fontSize: 11, color: "var(--ink-3)" }}>
                 synthesis is generated when the debate completes.
