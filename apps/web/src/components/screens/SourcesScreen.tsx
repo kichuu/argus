@@ -1,157 +1,244 @@
 "use client";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
-import { Dot } from "@/components/ui/Dot";
 import { KV } from "@/components/ui/KV";
-import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
-import { Sparkline } from "@/components/ui/Sparkline";
-import { ARGUS_DATA } from "@/mock/data";
+import { api, type Source } from "@/lib/api";
+
+const PAGE_SIZE = 50;
+
+const TIER_COLOR: Record<number, string> = {
+  1: "var(--green)",
+  2: "var(--amber)",
+  3: "var(--ink-2)",
+  4: "var(--red)",
+};
+
+function relTime(iso: string | null): string {
+  if (!iso) return "—";
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1) + "…";
+}
 
 export function SourcesScreen() {
-  const D = ARGUS_DATA;
+  const [page, setPage] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const sources = useQuery<Source[]>({
+    queryKey: ["sources", { page }],
+    queryFn: () => api.sources({ limit: PAGE_SIZE, offset: page * PAGE_SIZE, include_text: false }),
+    retry: 0,
+  });
+
+  const detail = useQuery<Source>({
+    queryKey: ["source", selectedId],
+    queryFn: () => api.source(selectedId!, { include_text: true }),
+    enabled: !!selectedId,
+    retry: 0,
+  });
+
+  const list = sources.data ?? [];
+
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
         code="11·SOURCES"
         title="Source Monitor"
-        breadcrumb={`// ${D.SOURCES.length} sources · 16 ok · 1 warn · 1 down`}
+        breadcrumb={
+          sources.isError
+            ? `// api offline`
+            : `// page ${page + 1} · ${list.length} sources`
+        }
         right={
           <div className="row gap-2">
+            <Btn ghost onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
+              ◀ PREV
+            </Btn>
+            <Btn ghost onClick={() => setPage((p) => p + 1)} disabled={list.length < PAGE_SIZE}>
+              NEXT ▶
+            </Btn>
             <Btn ghost>+ ADD RSS</Btn>
-            <Btn ghost>↗ MANUAL INGEST</Btn>
             <Btn primary>RETRY ALL</Btn>
           </div>
         }
       />
       <div className="grow row" style={{ overflow: "hidden" }}>
-        <div className="grow col" style={{ overflow: "hidden", padding: 16 }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-              gap: 10,
-              overflowY: "auto",
-              paddingRight: 4,
-            }}
-          >
-            {D.SOURCES.map((s) => {
-              const tone =
-                s.status === "down" ? "red" : s.status === "warn" ? "amber" : "green";
-              return (
-                <div
-                  key={s.id}
-                  className="panel"
-                  style={{
-                    padding: 12,
-                    borderColor:
-                      tone === "red"
-                        ? "var(--red-dim)"
-                        : tone === "amber"
-                          ? "var(--amber-dim)"
-                          : "var(--line-2)",
-                  }}
-                >
-                  <div
-                    className="row gap-2"
-                    style={{ alignItems: "center", marginBottom: 6 }}
-                  >
-                    <Dot tone={tone} pulse={tone !== "green"} />
-                    <span
-                      style={{ fontSize: 12, color: "var(--ink-0)", fontWeight: 600 }}
-                    >
-                      {s.name}
-                    </span>
-                    <div style={{ flex: 1 }} />
-                    <Chip>{s.type}</Chip>
-                  </div>
-                  <KV
-                    k="Status"
-                    v={s.status.toUpperCase()}
-                    vColor={
-                      tone === "red"
-                        ? "var(--red)"
-                        : tone === "amber"
-                          ? "var(--amber)"
-                          : "var(--green)"
-                    }
-                  />
-                  <KV k="Latency" v={s.status === "down" ? "—" : `${s.latency}s`} />
-                  <KV
-                    k="Error rate"
-                    v={s.status === "down" ? "100%" : `${(s.errorRate * 100).toFixed(2)}%`}
-                  />
-                  <KV k="Last update" v={`−${s.lastUpdate}`} />
-                  <KV k="Quality" v={s.status === "down" ? "—" : s.quality.toFixed(2)} />
-                  <KV k="Coverage" v={s.coverage} />
-                  <div className="row gap-2" style={{ marginTop: 8 }}>
-                    <Btn ghost style={{ flex: 1, fontSize: 9, padding: "3px 6px" }}>
-                      {s.status === "down" ? "RETRY" : "PAUSE"}
-                    </Btn>
-                    <Btn ghost style={{ flex: 1, fontSize: 9, padding: "3px 6px" }}>
-                      LOGS
-                    </Btn>
-                  </div>
-                </div>
-              );
-            })}
+        <div className="grow col" style={{ overflow: "hidden" }}>
+          <div className="grow" style={{ overflowY: "auto" }}>
+            {sources.isLoading && (
+              <div style={{ padding: 24, fontSize: 11, color: "var(--ink-3)" }}>
+                loading sources...
+              </div>
+            )}
+            {sources.isError && (
+              <div style={{ padding: 24, fontSize: 11, color: "var(--red)" }}>
+                ⚠ failed to fetch sources: {String(sources.error)}
+              </div>
+            )}
+            {!sources.isLoading && !sources.isError && (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: 90 }}>ID</th>
+                    <th>Title</th>
+                    <th style={{ width: 130 }}>Publisher</th>
+                    <th style={{ width: 70 }}>Trust</th>
+                    <th style={{ width: 100 }}>Fetched</th>
+                    <th style={{ width: 50 }}>Lang</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((s) => {
+                    const tier = s.trust_tier ?? 4;
+                    const isSel = s.id === selectedId;
+                    return (
+                      <tr
+                        key={s.id}
+                        onClick={() => setSelectedId(s.id)}
+                        style={{
+                          cursor: "pointer",
+                          background: isSel ? "var(--bg-3)" : undefined,
+                        }}
+                      >
+                        <td className="tab muted">{s.id.slice(0, 8)}</td>
+                        <td style={{ color: "var(--ink-0)" }}>{truncate(s.title, 80)}</td>
+                        <td style={{ color: "var(--ink-1)" }}>{s.publisher ?? "—"}</td>
+                        <td>
+                          <span
+                            className="tt-up"
+                            style={{ fontSize: 9, color: TIER_COLOR[tier] }}
+                          >
+                            T{tier}
+                          </span>
+                        </td>
+                        <td className="tab muted">{relTime(s.fetched_at)}</td>
+                        <td className="tab muted">{s.language ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                  {list.length === 0 && (
+                    <tr>
+                      <td colSpan={6}>
+                        <div
+                          style={{
+                            padding: 24,
+                            textAlign: "center",
+                            color: "var(--ink-3)",
+                            fontSize: 11,
+                          }}
+                        >
+                          ── no sources on this page ──
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
         <div
           style={{
-            width: 320,
+            width: 360,
             borderLeft: "1px solid var(--line-2)",
             background: "var(--bg-1)",
             overflowY: "auto",
           }}
         >
-          <Panel id="STATS" title="Aggregate" sub="all sources · 24h">
-            <div style={{ padding: 14 }}>
-              <div className="row gap-3">
-                <div style={{ flex: 1 }}>
-                  <div className="tt-up muted" style={{ fontSize: 9 }}>
-                    EVENTS / HR
-                  </div>
-                  <div
-                    className="tab"
-                    style={{ fontSize: 22, color: "var(--amber)", fontWeight: 600 }}
-                  >
-                    3,418
-                  </div>
-                  <Sparkline
-                    data={[1.2, 1.4, 1.6, 1.5, 1.8, 2.1, 2.4, 2.8, 3.0, 3.2, 3.4, 3.4]}
-                    width={140}
-                    height={24}
-                  />
+          {!selectedId && (
+            <div style={{ padding: 14, fontSize: 11, color: "var(--ink-3)" }}>
+              ── select a source to inspect raw text ──
+            </div>
+          )}
+          {selectedId && detail.isLoading && (
+            <div style={{ padding: 14, fontSize: 11, color: "var(--ink-3)" }}>
+              loading...
+            </div>
+          )}
+          {selectedId && detail.data && (
+            <div className="col">
+              <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
+                <div className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)" }}>
+                  SOURCE
+                </div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "var(--ink-0)",
+                    marginTop: 4,
+                    fontWeight: 600,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {detail.data.title}
+                </div>
+                <div className="row gap-2" style={{ marginTop: 8, flexWrap: "wrap" }}>
+                  <Chip tone="amber">T{detail.data.trust_tier}</Chip>
+                  {detail.data.language && <Chip>{detail.data.language}</Chip>}
+                  {detail.data.publisher && <Chip>{detail.data.publisher}</Chip>}
                 </div>
               </div>
-              <div style={{ marginTop: 14 }}>
-                <KV k="Total ingested" v="2.41M" />
-                <KV k="Geocoded" v="98.2%" vColor="var(--green)" />
-                <KV k="Deduped" v="−18.4%" />
-                <KV k="Avg latency p95" v="2.1s" />
+              <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
+                <KV k="ID" v={<span className="tab">{detail.data.id.slice(0, 12)}…</span>} />
+                <KV k="Hash" v={<span className="tab">{detail.data.content_hash.slice(0, 10)}…</span>} />
+                <KV k="Fetched" v={relTime(detail.data.fetched_at)} />
+                <KV k="Published" v={relTime(detail.data.published_at)} />
+                <KV k="License" v={detail.data.license ?? "—"} />
+                {detail.data.url && (
+                  <KV
+                    k="URL"
+                    v={
+                      <a
+                        href={detail.data.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: "var(--amber)" }}
+                      >
+                        open ↗
+                      </a>
+                    }
+                  />
+                )}
+              </div>
+              <div style={{ padding: 14 }}>
+                <div
+                  className="tt-up"
+                  style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 6 }}
+                >
+                  RAW TEXT (fragment)
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--ink-1)",
+                    background: "var(--bg-2)",
+                    border: "1px solid var(--line-1)",
+                    padding: 10,
+                    lineHeight: 1.55,
+                    maxHeight: 320,
+                    overflowY: "auto",
+                    whiteSpace: "pre-wrap",
+                    fontFamily: "'IBM Plex Sans', system-ui, sans-serif",
+                  }}
+                >
+                  {detail.data.raw_text
+                    ? detail.data.raw_text.slice(0, 2000) +
+                      (detail.data.raw_text.length > 2000 ? "…" : "")
+                    : "(no raw text available)"}
+                </div>
               </div>
             </div>
-          </Panel>
-          <Panel id="MAP" title="Coverage Map">
-            <div style={{ padding: 14, fontSize: 10, color: "var(--ink-1)" }}>
-              <div style={{ marginBottom: 4 }}>
-                Indo-Pacific <span className="amber">▰▰▰▰▰▰▰▰▱▱</span> 81%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                EU/UK <span className="amber">▰▰▰▰▰▰▰▱▱▱</span> 72%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                Americas <span className="amber">▰▰▰▰▰▰▱▱▱▱</span> 64%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                MENA <span className="amber">▰▰▰▰▱▱▱▱▱▱</span> 41%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                Sub-Sah Africa <span className="amber">▰▰▰▱▱▱▱▱▱▱</span> 28%
-              </div>
-            </div>
-          </Panel>
+          )}
         </div>
       </div>
     </div>

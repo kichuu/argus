@@ -1,270 +1,301 @@
 "use client";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { KV } from "@/components/ui/KV";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Segmented } from "@/components/ui/Segmented";
-import { ARGUS_DATA, type KGEntity } from "@/mock/data";
+import { api, type Entity, type EntityRelation, type EntityType } from "@/lib/api";
 
-const W = 800;
-const H = 600;
+// TODO(graph-viz): swap this list view for a React Flow / Cytoscape force-directed
+// graph once node/edge counts and persistence story stabilise. For now we render a
+// grouped, filterable table — same data, easier to ship.
 
-const TYPE_COLOR: Record<string, string> = {
-  country: "var(--p-1)",
+const FILTERS: { value: EntityType | "all"; label: string }[] = [
+  { value: "all", label: "ALL" },
+  { value: "person", label: "PERSON" },
+  { value: "org", label: "ORG" },
+  { value: "place", label: "PLACE" },
+  { value: "event", label: "EVENT" },
+  { value: "policy", label: "POLICY" },
+  { value: "product", label: "PRODUCT" },
+  { value: "concept", label: "CONCEPT" },
+];
+
+const TYPE_COLOR: Record<EntityType, string> = {
   person: "var(--p-2)",
-  company: "var(--p-4)",
   org: "var(--p-3)",
+  place: "var(--p-1)",
   event: "var(--p-5)",
-  doc: "var(--p-6)",
-  asset: "var(--p-7)",
-  place: "var(--ink-1)",
+  policy: "var(--p-6)",
+  product: "var(--p-4)",
+  concept: "var(--p-7)",
 };
 
-const FILTERS = ["all", "country", "person", "org", "company", "event", "place", "doc", "asset"] as const;
-
 export function KGScreen() {
-  const D = ARGUS_DATA;
-  const [sel, setSel] = useState<KGEntity | null>(
-    D.KG_ENTITIES.find((e) => e.id === "tw") ?? D.KG_ENTITIES[0],
-  );
-  const [filter, setFilter] = useState<string>("all");
+  const [filter, setFilter] = useState<EntityType | "all">("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const ents = filter === "all" ? D.KG_ENTITIES : D.KG_ENTITIES.filter((e) => e.type === filter);
-  const entIds = new Set(ents.map((e) => e.id));
-  const edges = D.KG_EDGES.filter(([a, b]) => entIds.has(a) && entIds.has(b));
+  const entities = useQuery<Entity[]>({
+    queryKey: ["entities", { filter }],
+    queryFn: () =>
+      api.entities({
+        limit: 200,
+        ...(filter !== "all" ? { entity_type: filter } : {}),
+      }),
+    retry: 0,
+  });
+
+  const relations = useQuery<EntityRelation[]>({
+    queryKey: ["entity-relations", selectedId],
+    queryFn: () => api.entityRelations(selectedId!, { limit: 100 }),
+    enabled: !!selectedId,
+    retry: 0,
+  });
+
+  const list = entities.data ?? [];
+  const selected = useMemo(() => list.find((e) => e.id === selectedId) ?? null, [list, selectedId]);
+
+  // Group by entity_type for stable visual grouping.
+  const groups = useMemo(() => {
+    const m = new Map<EntityType, Entity[]>();
+    for (const e of list) {
+      const arr = m.get(e.entity_type) ?? [];
+      arr.push(e);
+      m.set(e.entity_type, arr);
+    }
+    return Array.from(m.entries());
+  }, [list]);
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
         code="03·KG"
         title="Knowledge Graph Explorer"
-        breadcrumb={`// ${D.KG_ENTITIES.length} entities · ${D.KG_EDGES.length} edges · v.t = 14:22:08Z`}
+        breadcrumb={
+          entities.isError
+            ? `// api offline`
+            : `// ${list.length} entit${list.length === 1 ? "y" : "ies"} · list view (graph viz pending)`
+        }
         right={
           <div className="row gap-2">
-            <Segmented size="sm" options={FILTERS} value={filter} onChange={setFilter} />
-            <Btn ghost>◐ EMBEDDINGS</Btn>
+            <Segmented
+              size="sm"
+              options={FILTERS}
+              value={filter}
+              onChange={(v) => {
+                setFilter(v);
+                setSelectedId(null);
+              }}
+            />
             <Btn ghost>↗ EXPORT</Btn>
           </div>
         }
       />
 
       <div className="row grow" style={{ overflow: "hidden" }}>
-        <div
-          className="grow grid-bg"
-          style={{ position: "relative", overflow: "hidden", background: "var(--bg-1)" }}
-        >
-          <svg
-            viewBox={`0 0 ${W} ${H}`}
-            style={{ width: "100%", height: "100%" }}
-            preserveAspectRatio="xMidYMid meet"
-          >
-            {edges.map(([a, b, rel], i) => {
-              const ea = D.KG_ENTITIES.find((e) => e.id === a);
-              const eb = D.KG_ENTITIES.find((e) => e.id === b);
-              if (!ea || !eb) return null;
-              const x1 = ea.x * W;
-              const y1 = ea.y * H;
-              const x2 = eb.x * W;
-              const y2 = eb.y * H;
-              const isSel = sel && (sel.id === a || sel.id === b);
-              return (
-                <g key={i}>
-                  <line
-                    x1={x1}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
-                    stroke={isSel ? "var(--amber)" : "var(--line-2)"}
-                    strokeWidth={isSel ? 1 : 0.5}
-                    opacity={isSel ? 0.9 : 0.5}
-                  />
-                  {isSel && (
-                    <text
-                      x={(x1 + x2) / 2}
-                      y={(y1 + y2) / 2 - 3}
-                      fontSize="8"
-                      fill="var(--amber)"
-                      fontFamily="JetBrains Mono"
-                      textAnchor="middle"
-                    >
-                      {rel}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-            {ents.map((e) => {
-              const cx = e.x * W;
-              const cy = e.y * H;
-              const isSel = sel?.id === e.id;
-              const r = 4 + Math.sqrt(e.deg) * 1.5;
-              const c = TYPE_COLOR[e.type] || "var(--ink-1)";
-              return (
-                <g key={e.id} style={{ cursor: "pointer" }} onClick={() => setSel(e)}>
-                  {isSel && <circle cx={cx} cy={cy} r={r + 8} fill={c} opacity="0.18" />}
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r={r}
-                    fill="var(--bg-1)"
-                    stroke={c}
-                    strokeWidth={isSel ? 2 : 1}
-                  />
-                  <circle cx={cx} cy={cy} r={r / 2} fill={c} />
-                  <text
-                    x={cx + r + 5}
-                    y={cy + 3}
-                    fontSize="9"
-                    fill={isSel ? "var(--ink-0)" : "var(--ink-1)"}
-                    fontFamily="JetBrains Mono"
-                  >
-                    {e.label}
-                  </text>
-                </g>
-              );
-            })}
-            <text x={10} y={18} fontFamily="JetBrains Mono" fontSize="9" fill="var(--ink-3)">
-              FORCE-DIRECTED · t-SNE COMPONENTS · CONFIDENCE OVERLAY OFF
-            </text>
-          </svg>
-
-          <div
-            style={{
-              position: "absolute",
-              bottom: 12,
-              left: 12,
-              background: "var(--bg-2)",
-              border: "1px solid var(--line-2)",
-              padding: "6px 10px",
-              display: "flex",
-              gap: 12,
-              fontSize: 9,
-            }}
-          >
-            {Object.entries(TYPE_COLOR).map(([k, c]) => (
-              <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <span
-                  style={{ width: 6, height: 6, borderRadius: "50%", background: c }}
-                />{" "}
-                <span className="tt-up" style={{ color: "var(--ink-2)" }}>
-                  {k}
-                </span>
-              </span>
+        <div className="grow col" style={{ overflow: "hidden" }}>
+          <div className="grow" style={{ overflowY: "auto" }}>
+            {entities.isLoading && (
+              <div style={{ padding: 24, fontSize: 11, color: "var(--ink-3)" }}>
+                loading entities...
+              </div>
+            )}
+            {entities.isError && (
+              <div style={{ padding: 24, fontSize: 11, color: "var(--red)" }}>
+                ⚠ failed to fetch entities: {String(entities.error)}
+              </div>
+            )}
+            {!entities.isLoading && !entities.isError && groups.length === 0 && (
+              <div style={{ padding: 24, fontSize: 11, color: "var(--ink-3)" }}>
+                ── no entities ──
+              </div>
+            )}
+            {groups.map(([type, ents]) => (
+              <div key={type}>
+                <div
+                  className="tt-up"
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: 9,
+                    color: TYPE_COLOR[type],
+                    background: "var(--bg-2)",
+                    borderTop: "1px solid var(--line-2)",
+                    borderBottom: "1px solid var(--line-1)",
+                    letterSpacing: "0.12em",
+                  }}
+                >
+                  {type} · {ents.length}
+                </div>
+                <table className="tbl">
+                  <tbody>
+                    {ents.map((e) => {
+                      const isSel = e.id === selectedId;
+                      return (
+                        <tr
+                          key={e.id}
+                          onClick={() => setSelectedId(e.id)}
+                          style={{
+                            cursor: "pointer",
+                            background: isSel ? "var(--bg-3)" : undefined,
+                          }}
+                        >
+                          <td style={{ color: "var(--ink-0)", width: "40%" }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                width: 6,
+                                height: 6,
+                                borderRadius: "50%",
+                                background: TYPE_COLOR[type],
+                                marginRight: 8,
+                                verticalAlign: "middle",
+                              }}
+                            />
+                            {e.canonical_name}
+                          </td>
+                          <td className="muted" style={{ fontSize: 10 }}>
+                            {e.aliases.length > 0 ? `aka ${e.aliases.slice(0, 3).join(", ")}` : ""}
+                          </td>
+                          <td className="tab muted" style={{ width: 110 }}>
+                            {e.wikidata_id ?? "—"}
+                          </td>
+                          <td className="tab muted" style={{ width: 90 }}>
+                            {e.id.slice(0, 8)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             ))}
           </div>
         </div>
 
         <div
           style={{
-            width: 320,
+            width: 360,
             borderLeft: "1px solid var(--line-2)",
             background: "var(--bg-1)",
             overflowY: "auto",
           }}
         >
-          {sel && (
+          {!selected && (
+            <div style={{ padding: 14, fontSize: 11, color: "var(--ink-3)" }}>
+              ── select an entity to inspect ──
+            </div>
+          )}
+          {selected && (
             <>
               <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
-                <div className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                  {sel.type}
+                <div
+                  className="tt-up"
+                  style={{ fontSize: 9, color: TYPE_COLOR[selected.entity_type] }}
+                >
+                  {selected.entity_type}
                 </div>
                 <div
                   style={{
                     fontSize: 16,
                     color: "var(--ink-0)",
-                    marginTop: 2,
+                    marginTop: 4,
                     fontWeight: 600,
+                    lineHeight: 1.35,
                   }}
                 >
-                  {sel.label}
+                  {selected.canonical_name}
                 </div>
-                <div className="row gap-2" style={{ marginTop: 8 }}>
-                  <Chip tone="amber">deg {sel.deg}</Chip>
-                  <Chip>conf 0.91</Chip>
+                <div className="row gap-2" style={{ marginTop: 8, flexWrap: "wrap" }}>
+                  {selected.wikidata_id && <Chip tone="amber">{selected.wikidata_id}</Chip>}
+                  {selected.aliases.length > 0 && (
+                    <Chip>+{selected.aliases.length} alias</Chip>
+                  )}
                 </div>
-              </div>
-              <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
-                <div
-                  className="tt-up"
-                  style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 6 }}
-                >
-                  HISTORY · validity windows
-                </div>
-                {[
-                  { t: "2024-05-20", e: "Lai Ching-te inaugurated" },
-                  { t: "2025-01-04", e: "Conscription extended to 1y" },
-                  { t: "2026-03-11", e: "Hai Kun commissioned" },
-                  { t: "2026-04-22", e: "Joint Sword 2026-A response" },
-                ].map((h, i) => (
+                {selected.description && (
                   <div
-                    key={i}
-                    className="row gap-3"
-                    style={{ padding: "4px 0", fontSize: 10 }}
+                    style={{
+                      fontSize: 11,
+                      color: "var(--ink-1)",
+                      marginTop: 10,
+                      lineHeight: 1.5,
+                    }}
                   >
-                    <span className="tab muted" style={{ minWidth: 70 }}>
-                      {h.t}
-                    </span>
-                    <span style={{ color: "var(--ink-1)" }}>{h.e}</span>
+                    {selected.description}
                   </div>
-                ))}
+                )}
               </div>
+
               <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
-                <div
-                  className="tt-up"
-                  style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 6 }}
-                >
-                  LINKED DEBATES (3)
-                </div>
-                {D.RECENT.slice(0, 3).map((d) => (
-                  <div
-                    key={d.id}
-                    style={{ padding: "4px 0", fontSize: 11, color: "var(--ink-1)" }}
-                  >
-                    · {d.title}
-                  </div>
-                ))}
+                <KV k="ID" v={<span className="tab">{selected.id.slice(0, 12)}…</span>} />
+                <KV k="Created" v={new Date(selected.created_at).toISOString().slice(0, 10)} />
+                <KV k="Updated" v={new Date(selected.updated_at).toISOString().slice(0, 10)} />
               </div>
+
+              {selected.aliases.length > 0 && (
+                <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
+                  <div
+                    className="tt-up"
+                    style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 6 }}
+                  >
+                    ALIASES
+                  </div>
+                  <div className="row gap-1" style={{ flexWrap: "wrap" }}>
+                    {selected.aliases.map((a, i) => (
+                      <Chip key={i}>{a}</Chip>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div style={{ padding: 14 }}>
                 <div
                   className="tt-up"
                   style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 6 }}
                 >
-                  TOP CITATIONS
+                  RELATIONS{" "}
+                  {relations.data ? `(${relations.data.length})` : relations.isLoading ? "…" : ""}
                 </div>
-                <KV k="Reuters" v="412" />
-                <KV k="GDELT" v="289" />
-                <KV k="Xinhua" v="178" />
-                <KV k="CSIS" v="44" />
+                {relations.isError && (
+                  <div style={{ fontSize: 10, color: "var(--red)" }}>
+                    failed to load relations
+                  </div>
+                )}
+                {relations.data && relations.data.length === 0 && (
+                  <div style={{ fontSize: 10, color: "var(--ink-3)" }}>
+                    no relations recorded
+                  </div>
+                )}
+                {relations.data?.map((r) => {
+                  const outgoing = r.subject_id === selected.id;
+                  const otherId = outgoing ? r.object_id : r.subject_id;
+                  return (
+                    <div
+                      key={r.id}
+                      style={{
+                        fontSize: 10,
+                        padding: "4px 0",
+                        color: "var(--ink-1)",
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      <span className="tt-up muted" style={{ marginRight: 6 }}>
+                        {outgoing ? "→" : "←"}
+                      </span>
+                      <span className="tt-up" style={{ color: "var(--amber)" }}>
+                        {r.relation_type}
+                      </span>
+                      <span className="tab muted" style={{ marginLeft: 6 }}>
+                        {otherId.slice(0, 8)}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
         </div>
-      </div>
-
-      <div
-        style={{
-          height: 36,
-          borderTop: "1px solid var(--line-2)",
-          background: "var(--bg-1)",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 12px",
-          gap: 12,
-          flexShrink: 0,
-        }}
-      >
-        <Btn ghost>◀ −1h</Btn>
-        <span className="muted tt-up" style={{ fontSize: 9 }}>
-          2024-01
-        </span>
-        <div style={{ flex: 1, height: 4, background: "var(--bg-3)" }}>
-          <div style={{ width: "92%", height: "100%", background: "var(--amber)" }} />
-        </div>
-        <span className="muted tt-up" style={{ fontSize: 9 }}>
-          NOW
-        </span>
-        <Btn ghost>+1h ▶</Btn>
       </div>
     </div>
   );

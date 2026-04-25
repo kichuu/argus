@@ -4,59 +4,79 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
+import { Chip } from "@/components/ui/Chip";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
-import { api, type ClaimSummary } from "@/lib/api";
+import { api, type Claim, type ClaimStatus } from "@/lib/api";
 import { ARGUS_DATA, type RecentDebate } from "@/mock/data";
 
-const EXTRA: RecentDebate[] = [
+const FALLBACK_EXTRA: RecentDebate[] = [
   { id: "d-2026-04-19-04", title: "Meta-EU AI Act: §50 enforcement first-mover", time: "6d", personas: 5, status: "done" },
   { id: "d-2026-04-18-01", title: "Brazil rate cut: BCB orthodoxy under fiscal stress", time: "7d", personas: 4, status: "done" },
-  { id: "d-2026-04-17-02", title: "Iran-Israel: shadow war calibration", time: "8d", personas: 6, status: "done" },
-  { id: "d-2026-04-15-03", title: "Taiwan preparedness: civil-defense reforms", time: "10d", personas: 5, status: "done" },
-  { id: "d-2026-04-12-04", title: "ECB September: cut vs. hold", time: "13d", personas: 4, status: "done" },
-  { id: "d-2026-04-10-01", title: "Ukraine peace deal: territorial freeze scenarios", time: "15d", personas: 6, status: "done" },
 ];
 
-const COLLECTIONS: { n: string; c: number; sel?: boolean }[] = [
-  { n: "All debates", c: 14, sel: true },
-  { n: "★ Starred", c: 4 },
-  { n: "Indo-Pacific", c: 12 },
-  { n: "Macro", c: 8 },
-  { n: "AI policy", c: 5 },
-  { n: "Climate", c: 3 },
-  { n: "Recurring", c: 2 },
+const STATUS_OPTIONS: { value: ClaimStatus | "all"; label: string }[] = [
+  { value: "all", label: "ALL" },
+  { value: "likely_true", label: "LIKELY TRUE" },
+  { value: "contested", label: "CONTESTED" },
+  { value: "unverified", label: "UNVERIFIED" },
+  { value: "likely_false", label: "LIKELY FALSE" },
 ];
 
-// Deterministic hash so star/confidence don't reshuffle on re-render.
-function hash(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
+const STATUS_COLOR: Record<ClaimStatus, string> = {
+  likely_true: "var(--green)",
+  contested: "var(--amber)",
+  unverified: "var(--ink-2)",
+  likely_false: "var(--red)",
+};
+
+const PAGE_SIZE = 50;
+
+function relTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
 }
 
 export function LibraryScreen() {
   const router = useRouter();
   const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ClaimStatus | "all">("all");
+  const [page, setPage] = useState(0);
 
-  // Live-wire to /claims when API is reachable. Mock list is the canonical view today;
-  // claims are surfaced in a footer line. Falls through silently if API is offline.
-  const claims = useQuery({
-    queryKey: ["claims"],
-    queryFn: api.claims,
+  const claims = useQuery<Claim[]>({
+    queryKey: ["claims", { status: statusFilter, page }],
+    queryFn: () =>
+      api.claims({
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+      }),
     retry: 0,
   });
 
-  const items = useMemo(() => [...ARGUS_DATA.RECENT, ...EXTRA], []);
-  const filtered = q ? items.filter((i) => i.title.toLowerCase().includes(q.toLowerCase())) : items;
+  const usingFallback = claims.isError;
+  const live = claims.data ?? [];
+  const filtered = useMemo(
+    () => (q ? live.filter((c) => c.statement.toLowerCase().includes(q.toLowerCase())) : live),
+    [q, live],
+  );
+
+  // Mock fallback when API unreachable.
+  const mockItems = useMemo(() => [...ARGUS_DATA.RECENT, ...FALLBACK_EXTRA], []);
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
         code="08·LIBRARY"
-        title="Synthesis Library"
-        breadcrumb={`// ${items.length} archived · 14 collections${
-          claims.isSuccess ? ` · ${(claims.data as ClaimSummary[]).length} live claims` : ""
-        }`}
+        title="Claim Library"
+        breadcrumb={
+          usingFallback
+            ? `// api offline · ${mockItems.length} mock entries`
+            : `// ${live.length} on this page · status=${statusFilter}`
+        }
         right={
           <div className="row gap-2">
             <Btn ghost>+ COLLECTION</Btn>
@@ -76,25 +96,26 @@ export function LibraryScreen() {
           }}
         >
           <div className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)", marginBottom: 6 }}>
-            COLLECTIONS
+            STATUS
           </div>
-          {COLLECTIONS.map((c, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "5px 8px",
-                display: "flex",
-                fontSize: 11,
-                color: c.sel ? "var(--amber)" : "var(--ink-1)",
-                background: c.sel ? "var(--bg-3)" : "transparent",
-                cursor: "pointer",
-                borderLeft: c.sel ? "2px solid var(--amber)" : "2px solid transparent",
-              }}
-            >
-              <span style={{ flex: 1 }}>{c.n}</span>
-              <span className="tab muted">{c.c}</span>
-            </div>
-          ))}
+          <div className="col gap-1">
+            {STATUS_OPTIONS.map((opt) => {
+              const active = statusFilter === opt.value;
+              return (
+                <span
+                  key={opt.value}
+                  onClick={() => {
+                    setStatusFilter(opt.value);
+                    setPage(0);
+                  }}
+                  className={active ? "chip chip-amber" : "chip"}
+                  style={{ cursor: "pointer", justifyContent: "flex-start" }}
+                >
+                  {active ? "■" : "□"} {opt.label}
+                </span>
+              );
+            })}
+          </div>
           <div
             className="tt-up"
             style={{ fontSize: 9, color: "var(--ink-3)", margin: "16px 0 6px" }}
@@ -115,66 +136,149 @@ export function LibraryScreen() {
               padding: 12,
               borderBottom: "1px solid var(--line-2)",
               background: "var(--bg-1)",
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
             }}
           >
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
               className="input"
-              placeholder="search debates · regex supported"
+              placeholder="search claim statements..."
+              style={{ flex: 1 }}
             />
+            <Btn ghost onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
+              ◀ PREV
+            </Btn>
+            <span className="tab muted" style={{ fontSize: 10 }}>
+              page {page + 1}
+            </span>
+            <Btn
+              ghost
+              onClick={() => setPage((p) => p + 1)}
+              disabled={live.length < PAGE_SIZE}
+            >
+              NEXT ▶
+            </Btn>
           </div>
           <div className="grow" style={{ overflowY: "auto" }}>
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th style={{ width: 24 }}></th>
-                  <th>Title</th>
-                  <th style={{ width: 80 }}>ID</th>
-                  <th style={{ width: 70 }}>Personas</th>
-                  <th style={{ width: 90 }}>Confidence</th>
-                  <th style={{ width: 70 }}>Status</th>
-                  <th style={{ width: 60 }}>Age</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((d) => {
-                  const seed = hash(d.id);
-                  const star = seed % 10 < 3;
-                  const conf = 0.5 + ((seed % 40) / 100);
-                  return (
+            {claims.isLoading && (
+              <div style={{ padding: 24, fontSize: 11, color: "var(--ink-3)" }}>
+                loading claims...
+              </div>
+            )}
+            {usingFallback ? (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Title (mock)</th>
+                    <th style={{ width: 110 }}>ID</th>
+                    <th style={{ width: 90 }}>Status</th>
+                    <th style={{ width: 70 }}>Age</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mockItems.map((d) => (
                     <tr
                       key={d.id}
-                      onClick={() =>
-                        router.push(d.status === "running" ? "/debate" : "/synthesis")
-                      }
+                      onClick={() => router.push("/synthesis")}
                       style={{ cursor: "pointer" }}
                     >
-                      <td>{star ? "★" : ""}</td>
                       <td style={{ color: "var(--ink-0)" }}>{d.title}</td>
                       <td className="tab muted">{d.id}</td>
-                      <td className="tab">{d.personas}</td>
-                      <td>
-                        <Bar value={conf} width={70} color="var(--amber)" />
-                      </td>
                       <td>
                         <span
                           className="tt-up"
-                          style={{
-                            fontSize: 9,
-                            color: d.status === "running" ? "var(--amber)" : "var(--green)",
-                          }}
+                          style={{ fontSize: 9, color: "var(--ink-2)" }}
                         >
                           {d.status}
                         </span>
                       </td>
                       <td className="tab muted">{d.time}</td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Statement</th>
+                    <th style={{ width: 110 }}>ID</th>
+                    <th style={{ width: 110 }}>Status</th>
+                    <th style={{ width: 110 }}>Confidence</th>
+                    <th style={{ width: 60 }}>Sources</th>
+                    <th style={{ width: 60 }}>Age</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((c) => {
+                    const color = STATUS_COLOR[c.status];
+                    return (
+                      <tr
+                        key={c.id}
+                        onClick={() => router.push("/synthesis")}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td style={{ color: "var(--ink-0)", lineHeight: 1.45 }}>
+                          {c.statement}
+                        </td>
+                        <td className="tab muted">{c.id.slice(0, 8)}</td>
+                        <td>
+                          <span className="tt-up" style={{ fontSize: 9, color }}>
+                            {c.status.replace("_", " ")}
+                          </span>
+                        </td>
+                        <td>
+                          <Bar value={c.confidence} width={70} color={color} showVal />
+                        </td>
+                        <td className="tab">
+                          {c.supporting_evidence.length}
+                          {c.contradicting_evidence.length > 0 && (
+                            <span style={{ color: "var(--red)" }}>
+                              {" "}
+                              −{c.contradicting_evidence.length}
+                            </span>
+                          )}
+                        </td>
+                        <td className="tab muted">{relTime(c.created_at)}</td>
+                      </tr>
+                    );
+                  })}
+                  {!claims.isLoading && filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={6}>
+                        <div
+                          style={{
+                            padding: 24,
+                            textAlign: "center",
+                            color: "var(--ink-3)",
+                            fontSize: 11,
+                          }}
+                        >
+                          ── no claims match these filters ──
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
+          {usingFallback && (
+            <div
+              style={{
+                padding: 8,
+                borderTop: "1px solid var(--line-2)",
+                background: "var(--bg-1)",
+                fontSize: 10,
+              }}
+            >
+              <Chip tone="amber">FALLBACK MOCK</Chip>{" "}
+              <span className="muted">api unreachable — showing archived debates</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

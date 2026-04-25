@@ -8,9 +8,18 @@ import { Dot } from "@/components/ui/Dot";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Segmented } from "@/components/ui/Segmented";
-import { api } from "@/lib/api";
+import { api, type Claim, type DiscussionRun } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
+
+function relTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
 
 export function HomeScreen() {
   const router = useRouter();
@@ -26,6 +35,20 @@ export function HomeScreen() {
     queryFn: api.health,
     retry: 0,
     staleTime: 30_000,
+  });
+
+  const recentDiscussions = useQuery<DiscussionRun[]>({
+    queryKey: ["discussions", { limit: 5 }],
+    queryFn: () => api.discussions({ limit: 5 }),
+    retry: 0,
+    staleTime: 10_000,
+  });
+
+  const recentClaims = useQuery<Claim[]>({
+    queryKey: ["claims", { limit: 5 }],
+    queryFn: () => api.claims({ limit: 5 }),
+    retry: 0,
+    staleTime: 10_000,
   });
 
   const launch = (text?: string) => {
@@ -197,91 +220,195 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
       <div className="row gap-4" style={{ flexShrink: 0, minHeight: 240 }}>
         <Panel
           id="C"
-          title="Recent Debates"
-          sub={`${D.RECENT.length} · this session`}
+          title="Recent Discussions"
+          sub={
+            recentDiscussions.isSuccess
+              ? `${recentDiscussions.data.length} · live`
+              : recentDiscussions.isError
+                ? `${D.RECENT.length} · mock`
+                : "loading..."
+          }
           style={{ flex: 2 }}
         >
           <div className="col" style={{ overflowY: "auto" }}>
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th style={{ width: 32 }}></th>
-                  <th>Topic</th>
-                  <th style={{ width: 80 }}>Personas</th>
-                  <th style={{ width: 70 }}>Status</th>
-                  <th style={{ width: 60 }}>Age</th>
-                  <th style={{ width: 30 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {D.RECENT.map((d) => (
-                  <tr
-                    key={d.id}
-                    onClick={() => router.push(d.status === "running" ? "/debate" : "/synthesis")}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <td>
-                      <Dot
-                        tone={d.status === "running" ? "amber" : "green"}
-                        pulse={d.status === "running"}
-                      />
-                    </td>
-                    <td style={{ color: "var(--ink-0)" }}>{d.title}</td>
-                    <td className="tab">{d.personas}</td>
-                    <td>
-                      <span
-                        className="tt-up"
-                        style={{
-                          fontSize: 9,
-                          color: d.status === "running" ? "var(--amber)" : "var(--ink-2)",
-                        }}
-                      >
-                        {d.status}
-                      </span>
-                    </td>
-                    <td className="tab muted">{d.time}</td>
-                    <td className="muted">→</td>
+            {recentDiscussions.isSuccess && recentDiscussions.data.length > 0 ? (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: 32 }}></th>
+                    <th>Topic</th>
+                    <th style={{ width: 90 }}>Vertical</th>
+                    <th style={{ width: 90 }}>Status</th>
+                    <th style={{ width: 50 }}>Msgs</th>
+                    <th style={{ width: 30 }}></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {recentDiscussions.data.map((d) => {
+                    const running = !["completed", "failed"].includes(d.status);
+                    const failed = d.status === "failed";
+                    return (
+                      <tr
+                        key={d.id}
+                        onClick={() => router.push("/debate")}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td>
+                          <Dot
+                            tone={failed ? "red" : running ? "amber" : "green"}
+                            pulse={running}
+                          />
+                        </td>
+                        <td style={{ color: "var(--ink-0)" }}>{d.topic}</td>
+                        <td className="tt-up muted" style={{ fontSize: 9 }}>
+                          {d.vertical}
+                        </td>
+                        <td>
+                          <span
+                            className="tt-up"
+                            style={{
+                              fontSize: 9,
+                              color: failed
+                                ? "var(--red)"
+                                : running
+                                  ? "var(--amber)"
+                                  : "var(--green)",
+                            }}
+                          >
+                            {d.status}
+                          </span>
+                        </td>
+                        <td className="tab">{d.messages_count}</td>
+                        <td className="muted">→</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th style={{ width: 32 }}></th>
+                    <th>Topic</th>
+                    <th style={{ width: 80 }}>Personas</th>
+                    <th style={{ width: 70 }}>Status</th>
+                    <th style={{ width: 60 }}>Age</th>
+                    <th style={{ width: 30 }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {D.RECENT.map((d) => (
+                    <tr
+                      key={d.id}
+                      onClick={() => router.push(d.status === "running" ? "/debate" : "/synthesis")}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>
+                        <Dot
+                          tone={d.status === "running" ? "amber" : "green"}
+                          pulse={d.status === "running"}
+                        />
+                      </td>
+                      <td style={{ color: "var(--ink-0)" }}>{d.title}</td>
+                      <td className="tab">{d.personas}</td>
+                      <td>
+                        <span
+                          className="tt-up"
+                          style={{
+                            fontSize: 9,
+                            color: d.status === "running" ? "var(--amber)" : "var(--ink-2)",
+                          }}
+                        >
+                          {d.status}
+                        </span>
+                      </td>
+                      <td className="tab muted">{d.time}</td>
+                      <td className="muted">→</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </Panel>
 
         <Panel
           id="D"
-          title="Live Ingest"
-          sub="all sources · −2 min window"
+          title="Recent Claims"
+          sub={
+            recentClaims.isSuccess
+              ? `${recentClaims.data.length} · live ledger`
+              : recentClaims.isError
+                ? "api offline · mock ticker"
+                : "loading..."
+          }
           style={{ flex: 1 }}
           right={
             <>
-              <Dot tone="green" pulse />
-              <span className="tt-up" style={{ fontSize: 9, color: "var(--green)" }}>
-                LIVE
+              <Dot tone={apiOnline ? "green" : "amber"} pulse />
+              <span
+                className="tt-up"
+                style={{ fontSize: 9, color: apiOnline ? "var(--green)" : "var(--amber)" }}
+              >
+                {apiOnline ? "LIVE" : "MOCK"}
               </span>
             </>
           }
         >
           <div className="col" style={{ overflowY: "auto" }}>
-            {D.TICKER.map((t, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: "6px 10px",
-                  borderBottom: "1px solid var(--line-1)",
-                  fontSize: 10,
-                  lineHeight: 1.4,
-                }}
-              >
-                <div className="row gap-2" style={{ alignItems: "baseline" }}>
-                  <span className="tab muted">{t.t}</span>
-                  <span className="amber tt-up" style={{ fontSize: 9 }}>
-                    {t.src}
-                  </span>
-                </div>
-                <div style={{ color: "var(--ink-1)", marginTop: 2 }}>{t.line}</div>
-              </div>
-            ))}
+            {recentClaims.isSuccess && recentClaims.data.length > 0
+              ? recentClaims.data.map((c) => {
+                  const color =
+                    c.status === "likely_true"
+                      ? "var(--green)"
+                      : c.status === "contested"
+                        ? "var(--amber)"
+                        : c.status === "likely_false"
+                          ? "var(--red)"
+                          : "var(--ink-2)";
+                  return (
+                    <div
+                      key={c.id}
+                      style={{
+                        padding: "6px 10px",
+                        borderBottom: "1px solid var(--line-1)",
+                        fontSize: 10,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      <div className="row gap-2" style={{ alignItems: "baseline" }}>
+                        <span className="tab muted">{relTime(c.created_at)}</span>
+                        <span className="tt-up" style={{ fontSize: 9, color }}>
+                          {c.status.replace("_", " ")}
+                        </span>
+                      </div>
+                      <div style={{ color: "var(--ink-1)", marginTop: 2 }}>
+                        {c.statement.slice(0, 140)}
+                        {c.statement.length > 140 ? "…" : ""}
+                      </div>
+                    </div>
+                  );
+                })
+              : D.TICKER.map((t, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: "6px 10px",
+                      borderBottom: "1px solid var(--line-1)",
+                      fontSize: 10,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    <div className="row gap-2" style={{ alignItems: "baseline" }}>
+                      <span className="tab muted">{t.t}</span>
+                      <span className="amber tt-up" style={{ fontSize: 9 }}>
+                        {t.src}
+                      </span>
+                    </div>
+                    <div style={{ color: "var(--ink-1)", marginTop: 2 }}>{t.line}</div>
+                  </div>
+                ))}
           </div>
         </Panel>
       </div>
