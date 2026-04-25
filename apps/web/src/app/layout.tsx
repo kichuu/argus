@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { IBM_Plex_Sans, IBM_Plex_Serif, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { CommandPalette } from "@/components/shell/CommandPalette";
@@ -9,6 +10,27 @@ import { StatusBar } from "@/components/shell/StatusBar";
 import { ThemeApplier } from "@/components/shell/ThemeApplier";
 import { TopBar } from "@/components/shell/TopBar";
 
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+});
+
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ibm-plex-sans",
+  display: "swap",
+});
+
+const ibmPlexSerif = IBM_Plex_Serif({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-ibm-plex-serif",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "argus · World Awareness Platform",
   description: "Claim-ledger world-awareness platform with multi-agent debate over cited evidence.",
@@ -16,15 +38,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="dark" data-light-variant="paper">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:wght@400;500;600&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html
+      lang="en"
+      data-theme="dark"
+      data-light-variant="paper"
+      className={`${jetbrainsMono.variable} ${ibmPlexSans.variable} ${ibmPlexSerif.variable}`}
+    >
       <body>
         <Providers>
           <ThemeApplier />
