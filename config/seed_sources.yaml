@@ -1,0 +1,128 @@
+# Argus seed RSS sources.
+#
+# Tier-1/2 only. Per-vertical lists feed names, RSS URLs, declared trust tier,
+# and tags. Trust tier overrides the trust_tiers.yaml resolution at the feed's
+# hostname for the duration of an ingestion run.
+
+verticals:
+  finance:
+    - name: "Federal Reserve press releases"
+      feed_url: "https://www.federalreserve.gov/feeds/press_all.xml"
+      trust_tier: 1
+      tags: [monetary-policy, fomc, us]
+    - name: "SEC press releases"
+      feed_url: "https://www.sec.gov/news/pressreleases.rss"
+      trust_tier: 1
+      tags: [regulation, us, markets]
+    - name: "BLS Employment Situation"
+      feed_url: "https://www.bls.gov/feed/news_release/empsit.rss"
+      trust_tier: 1
+      tags: [labor, statistics, us]
+    - name: "US Treasury press releases"
+      feed_url: "https://home.treasury.gov/news/press-releases/feed"
+      trust_tier: 1
+      tags: [treasury, us, fiscal-policy]
+    - name: "IMF news"
+      feed_url: "https://www.imf.org/en/News/RSS?Language=ENG"
+      trust_tier: 1
+      tags: [imf, global, macro]
+    - name: "Reuters Business (BBC mirror via Reuters)"
+      feed_url: "https://feeds.reuters.com/reuters/businessNews"
+      trust_tier: 2
+      tags: [markets, wire]
+
+  climate:
+    - name: "NASA news releases"
+      feed_url: "https://www.nasa.gov/news-release/feed/"
+      trust_tier: 1
+      tags: [nasa, science, earth-observation]
+    - name: "IPCC news"
+      feed_url: "https://www.ipcc.ch/feed/"
+      trust_tier: 1
+      tags: [ipcc, climate-science, igo]
+    - name: "IEA news"
+      feed_url: "https://www.iea.org/news/rss"
+      trust_tier: 1
+      tags: [energy, iea, igo]
+    - name: "EIA news"
+      feed_url: "https://www.eia.gov/rss/press_rss.xml"
+      trust_tier: 1
+      tags: [energy, statistics, us]
+    - name: "Carbon Brief"
+      feed_url: "https://www.carbonbrief.org/feed/"
+      trust_tier: 2
+      tags: [climate, analysis]
+    - name: "Inside Climate News"
+      feed_url: "https://insideclimatenews.org/feed/"
+      trust_tier: 2
+      tags: [climate, investigative]
+
+  civic:
+    - name: "Congress.gov most-viewed bills"
+      feed_url: "https://www.congress.gov/rss/most-viewed-bills.xml"
+      trust_tier: 1
+      tags: [congress, legislation, us]
+    - name: "GovInfo US Courts"
+      feed_url: "https://www.govinfo.gov/rss/uscourts.xml"
+      trust_tier: 1
+      tags: [judicial, us]
+    - name: "White House briefing room"
+      feed_url: "https://www.whitehouse.gov/feed/"
+      trust_tier: 1
+      tags: [executive, us]
+    - name: "ProPublica"
+      feed_url: "https://www.propublica.org/feeds/propublica/main"
+      trust_tier: 2
+      tags: [investigative, accountability]
+    - name: "NPR Politics"
+      feed_url: "https://feeds.npr.org/1014/rss.xml"
+      trust_tier: 2
+      tags: [politics, us]
+    - name: "The Hill"
+      feed_url: "https://thehill.com/homenews/feed/"
+      trust_tier: 2
+      tags: [politics, us, congress]
+
+  geopolitics:
+    - name: "BBC World News"
+      feed_url: "https://feeds.bbci.co.uk/news/world/rss.xml"
+      trust_tier: 2
+      tags: [world, wire]
+    - name: "UN News"
+      feed_url: "https://news.un.org/feed/subscribe/en/news/all/rss.xml"
+      trust_tier: 1
+      tags: [un, igo, global]
+    - name: "Al Jazeera English"
+      feed_url: "https://www.aljazeera.com/xml/rss/all.xml"
+      trust_tier: 2
+      tags: [world, middle-east]
+    - name: "Reuters World"
+      feed_url: "https://feeds.reuters.com/Reuters/worldNews"
+      trust_tier: 2
+      tags: [world, wire]
+    - name: "Foreign Policy"
+      feed_url: "https://foreignpolicy.com/feed/"
+      trust_tier: 2
+      tags: [analysis, world]
+    - name: "DW English"
+      feed_url: "https://rss.dw.com/rdf/rss-en-all"
+      trust_tier: 2
+      tags: [world, europe]
+
+  general:
+    - name: "BBC Top Stories"
+      feed_url: "https://feeds.bbci.co.uk/news/rss.xml"
+      trust_tier: 2
+      tags: [general, wire]
+    - name: "NPR Top News"
+      feed_url: "https://feeds.npr.org/1001/rss.xml"
+      trust_tier: 2
+      tags: [general, us]
+    - name: "Guardian World"
+      feed_url: "https://www.theguardian.com/world/rss"
+      trust_tier: 2
+      tags: [general, world]
+    - name: "AP Top News"
+      feed_url: "https://feeds.apnews.com/rss/apf-topnews"
+      trust_tier: 2
+      tags: [general, wire]

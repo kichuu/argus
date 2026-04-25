@@ -43,7 +43,7 @@ class IngestionWorkflow:
                     )
                     await workflow.execute_activity(
                         "index_evidence",
-                        sid,
+                        [sid],
                         start_to_close_timeout=timedelta(minutes=5),
                         retry_policy=retry,
                     )
