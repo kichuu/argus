@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["apps/*", "packages/*"]
+members = ["apps/api", "apps/workers", "packages/*"]
 
 [tool.uv.sources]
 argus-core = { workspace = true }
@@ -39,6 +39,8 @@ ignore = ["E501", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["B011", "N802"]
+# Scripts unpack imported classes from helpers; PascalCase names are correct.
+"scripts/**" = ["N806"]
 
 [tool.pyright]
 pythonVersion = "3.12"
@@ -52,4 +54,4 @@ reportMissingTypeStubs = "none"
 asyncio_mode = "auto"
 testpaths = ["apps", "packages"]
 python_files = ["test_*.py"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers --import-mode=importlib"

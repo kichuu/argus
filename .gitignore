@@ -57,3 +57,6 @@ phoenix_data/
 convo*.txt
 conversation*.txt
 *.export.txt
+
+# Design handoff archives — unzipped tree under design/ is the source of truth
+*-handoff.zip
