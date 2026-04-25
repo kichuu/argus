@@ -5,6 +5,7 @@ from argus_core.schemas import EvidenceRef, Source
 from argus_core.settings import get_settings
 
 from argus_extraction.providers.base import Provider
+from argus_extraction.providers.factory import class_of
 
 logger = get_logger(__name__)
 
@@ -35,16 +36,19 @@ class AdversarialVerifier:
     def __init__(
         self,
         verifier_provider: Provider,
-        extractor_family: str,
+        extractor_model_class: str,
         model: str | None = None,
     ) -> None:
-        if verifier_provider.name == extractor_family:
+        resolved_model = model or get_settings().default_verifier_model
+        verifier_class = class_of(resolved_model)
+        extractor_class = extractor_model_class.lower().strip()
+        if verifier_class == extractor_class:
             raise ValueError(
-                "verifier must be from a different family than extractor "
-                f"(both are {extractor_family!r})"
+                "verifier must be a different model class than the extractor "
+                f"(e.g. reasoning vs. chat); got {extractor_class!r} for both"
             )
         self._provider = verifier_provider
-        self._model = model or get_settings().default_verifier_model
+        self._model = resolved_model
 
     async def verdict(
         self,

@@ -1,10 +1,12 @@
-from argus_agents.base import Agent
-from argus_agents.state import DiscussionState
 from argus_core.logging import get_logger
 from argus_core.schemas import AgentRole, Claim, ClaimStatus, EvidenceRef
 from argus_core.schemas.claim import AgentConsensus
+from argus_core.settings import get_settings
 from argus_extraction.providers import Provider
 from pydantic import BaseModel, Field, ValidationError
+
+from argus_agents.base import Agent
+from argus_agents.state import DiscussionState
 
 logger = get_logger(__name__)
 
@@ -44,8 +46,8 @@ Drop any candidate claim that lacks at least one supporting evidence id from the
 
 
 class SynthesizerAgent(Agent):
-    def __init__(self, provider: Provider, model: str) -> None:
-        super().__init__(AgentRole.SYNTHESIZER, model)
+    def __init__(self, provider: Provider, model: str | None = None) -> None:
+        super().__init__(AgentRole.SYNTHESIZER, model or get_settings().default_synthesis_model)
         self.provider = provider
 
     async def step(self, state: DiscussionState) -> DiscussionState:

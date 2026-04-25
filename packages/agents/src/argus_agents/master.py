@@ -1,9 +1,11 @@
-from argus_agents.base import Agent
-from argus_agents.state import DiscussionState
 from argus_core.logging import get_logger
 from argus_core.schemas import AgentRole, Persona
+from argus_core.settings import get_settings
 from argus_extraction.providers import Provider
 from pydantic import BaseModel, Field, ValidationError
+
+from argus_agents.base import Agent
+from argus_agents.state import DiscussionState
 
 logger = get_logger(__name__)
 
@@ -32,8 +34,8 @@ and 2-5 knowledge_emphasis tags. Do not write phrases like "you are X" or "act a
 
 
 class MasterAgent(Agent):
-    def __init__(self, provider: Provider, model: str) -> None:
-        super().__init__(AgentRole.MASTER, model)
+    def __init__(self, provider: Provider, model: str | None = None) -> None:
+        super().__init__(AgentRole.MASTER, model or get_settings().default_master_model)
         self.provider = provider
 
     async def step(self, state: DiscussionState) -> DiscussionState:

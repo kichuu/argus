@@ -2,9 +2,9 @@ from argus_extraction.adversarial import AdversarialVerifier, Verdict
 from argus_extraction.extractor import ClaimExtractor
 from argus_extraction.ner import GLiNERPrePass
 from argus_extraction.providers import (
-    AnthropicProvider,
     OpenAIProvider,
     Provider,
+    class_of,
     family_of,
     get_provider,
 )
@@ -23,7 +23,6 @@ from argus_extraction.verifier import (
 
 __all__ = [
     "AdversarialVerifier",
-    "AnthropicProvider",
     "ClaimExtractor",
     "ExtractedClaim",
     "ExtractedEntity",
@@ -34,6 +33,7 @@ __all__ = [
     "Provider",
     "Verdict",
     "VerificationError",
+    "class_of",
     "family_of",
     "get_provider",
     "to_evidence_ref",

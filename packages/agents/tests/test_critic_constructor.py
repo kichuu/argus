@@ -1,11 +1,12 @@
-import pytest
+import logging
+
 from argus_agents.critic import CriticAgent
 from argus_extraction.providers import Provider
 from pydantic import BaseModel
 
 
 class _FakeProvider(Provider):
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str = "openai") -> None:
         self.name = name
 
     async def structured_extract(
@@ -17,19 +18,22 @@ class _FakeProvider(Provider):
         raise NotImplementedError
 
 
-def test_critic_rejects_same_family_as_extractor():
-    provider = _FakeProvider(name="anthropic")
-    with pytest.raises(ValueError, match="must differ"):
-        CriticAgent(provider, model="gpt-5-mini", extractor_family="anthropic")
+def test_critic_warns_when_same_class_as_extractor(caplog) -> None:
+    provider = _FakeProvider()
+    with caplog.at_level(logging.WARNING):
+        critic = CriticAgent(provider, model="gpt-5.5", extractor_family="gpt")
+    assert critic.extractor_family == "gpt"
 
 
-def test_critic_rejects_critic_model_in_extractor_family():
-    provider = _FakeProvider(name="openai")
-    with pytest.raises(ValueError, match="must differ"):
-        CriticAgent(provider, model="claude-sonnet-4-6", extractor_family="anthropic")
+def test_critic_no_warning_when_different_class(caplog) -> None:
+    provider = _FakeProvider()
+    with caplog.at_level(logging.WARNING):
+        critic = CriticAgent(provider, model="o4-mini", extractor_family="gpt")
+    assert critic.extractor_family == "gpt"
+    assert "critic_extractor_same_class" not in caplog.text
 
 
-def test_critic_accepts_different_family():
-    provider = _FakeProvider(name="openai")
-    critic = CriticAgent(provider, model="gpt-5-mini", extractor_family="anthropic")
-    assert critic.extractor_family == "anthropic"
+def test_critic_accepts_no_extractor_family() -> None:
+    provider = _FakeProvider()
+    critic = CriticAgent(provider, model="gpt-5.5")
+    assert critic.model == "gpt-5.5"

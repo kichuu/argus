@@ -1,9 +1,11 @@
-from argus_agents.base import _EV_PATTERN, Agent
-from argus_agents.state import DiscussionState
 from argus_core.logging import get_logger
 from argus_core.schemas import AgentMessage, AgentRole
+from argus_core.settings import get_settings
 from argus_extraction.providers import Provider, family_of
 from pydantic import BaseModel, Field
+
+from argus_agents.base import _EV_PATTERN, Agent
+from argus_agents.state import DiscussionState
 
 logger = get_logger(__name__)
 
@@ -35,23 +37,25 @@ class CriticAgent(Agent):
     def __init__(
         self,
         provider: Provider,
-        model: str,
-        extractor_family: str,
+        model: str | None = None,
+        extractor_family: str = "",
     ) -> None:
-        super().__init__(AgentRole.CRITIC, model)
-        if provider.name.lower() == extractor_family.lower():
-            raise ValueError(
-                f"critic provider ({provider.name!r}) must differ from extractor family "
-                f"({extractor_family!r}) for adversarial verification"
-            )
-        critic_family = family_of(model)
-        if critic_family.lower() == extractor_family.lower():
-            raise ValueError(
-                f"critic model family ({critic_family!r}) must differ from extractor "
-                f"family ({extractor_family!r})"
+        resolved_model = model or get_settings().default_critic_model
+        super().__init__(AgentRole.CRITIC, resolved_model)
+        # Critic shares vendor with extractor under the openai-only build. The
+        # hard same-class rule lives on AdversarialVerifier (verifier-style
+        # assertion). Critic reasons over already-verified evidence, so we only
+        # warn when its class matches the extractor.
+        critic_class = family_of(resolved_model).lower()
+        ext_class = extractor_family.lower()
+        if ext_class and critic_class == ext_class:
+            logger.warning(
+                "critic_extractor_same_class",
+                critic_class=critic_class,
+                extractor_class=ext_class,
             )
         self.provider = provider
-        self.extractor_family = extractor_family.lower()
+        self.extractor_family = ext_class
 
     async def step(self, state: DiscussionState) -> DiscussionState:
         evidence_by_id = {str(e.source_id): e for e in state.evidence_pack.evidence}

@@ -1,16 +1,18 @@
 from typing import Any
 
-from argus_agents.base import Agent
-from argus_agents.state import DiscussionState, EvidencePack
 from argus_core.logging import get_logger
 from argus_core.schemas import AgentRole, EvidenceRef
+from argus_core.settings import get_settings
+
+from argus_agents.base import Agent
+from argus_agents.state import DiscussionState, EvidencePack
 
 logger = get_logger(__name__)
 
 
 class ResearchAgent(Agent):
-    def __init__(self, retriever: Any, model: str, top_k: int = 24) -> None:
-        super().__init__(AgentRole.RESEARCH, model)
+    def __init__(self, retriever: Any, model: str | None = None, top_k: int = 24) -> None:
+        super().__init__(AgentRole.RESEARCH, model or get_settings().default_research_model)
         self.retriever = retriever
         self.top_k = top_k
 

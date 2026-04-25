@@ -1,8 +1,10 @@
-from argus_agents.base import _EV_PATTERN, Agent, strip_unsupported_claims
-from argus_agents.state import DiscussionState
 from argus_core.logging import get_logger
 from argus_core.schemas import AgentMessage, AgentRole, EvidenceRef, Persona
+from argus_core.settings import get_settings
 from argus_extraction.providers import Provider
+
+from argus_agents.base import _EV_PATTERN, Agent, strip_unsupported_claims
+from argus_agents.state import DiscussionState
 
 logger = get_logger(__name__)
 
@@ -25,8 +27,8 @@ Write 3-6 short, declarative sentences. Each must end with at least one [ev:...]
 
 
 class PersonaAgent(Agent):
-    def __init__(self, persona: Persona, provider: Provider, model: str) -> None:
-        super().__init__(AgentRole.PERSONA, model)
+    def __init__(self, persona: Persona, provider: Provider, model: str | None = None) -> None:
+        super().__init__(AgentRole.PERSONA, model or get_settings().default_persona_model)
         self.persona = persona
         self.provider = provider
 

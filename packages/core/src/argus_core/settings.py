@@ -16,13 +16,15 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     log_level: str = "INFO"
 
-    anthropic_api_key: str = ""
     openai_api_key: str = ""
 
-    default_synthesis_model: str = "claude-sonnet-4-6"
-    default_extractor_model: str = "claude-haiku-4-5"
-    default_verifier_model: str = "gpt-5-mini"
-    default_research_model: str = "claude-sonnet-4-6"
+    default_synthesis_model: str = "gpt-5.5"
+    default_extractor_model: str = "gpt-5.4"
+    default_verifier_model: str = "o4-mini"
+    default_research_model: str = "gpt-5.5"
+    default_persona_model: str = "gpt-5.4"
+    default_master_model: str = "gpt-5.5"
+    default_critic_model: str = "gpt-5.5"
 
     database_url: str = "postgresql+asyncpg://argus:@localhost:5432/argus"
     alembic_database_url: str = "postgresql://argus:@localhost:5432/argus"

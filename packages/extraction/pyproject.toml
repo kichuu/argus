@@ -5,7 +5,6 @@ description = "Argus extraction: LLM extraction + programmatic + adversarial ver
 requires-python = ">=3.12"
 dependencies = [
     "argus-core",
-    "anthropic>=0.42",
     "openai>=1.55",
     "pydantic>=2.9",
     "httpx>=0.28",
