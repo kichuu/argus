@@ -205,6 +205,172 @@ async def test_get_source_detail(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "raw_text" not in body  # don't leak full text
 
 
+# ---------- POST /sources (manual URL ingest) ----------
+
+
+class _FakeHTTPResponse:
+    def __init__(
+        self,
+        text: str = "",
+        status_code: int = 200,
+        content_type: str = "text/html; charset=utf-8",
+    ) -> None:
+        self.text = text
+        self.status_code = status_code
+        self.headers = {"content-type": content_type}
+
+
+class _FakeAsyncClient:
+    def __init__(self, response: _FakeHTTPResponse) -> None:
+        self._response = response
+
+    async def __aenter__(self) -> "_FakeAsyncClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def get(self, url: str) -> _FakeHTTPResponse:  # noqa: ARG002
+        return self._response
+
+
+def _patch_httpx(monkeypatch: pytest.MonkeyPatch, response: _FakeHTTPResponse) -> None:
+    def _factory(*args, **kwargs):  # noqa: ARG001
+        return _FakeAsyncClient(response)
+
+    monkeypatch.setattr(sources_route.httpx, "AsyncClient", _factory)
+
+
+class _RecordingSession(FakeSession):
+    """FakeSession that captures `session.add(model)` calls."""
+
+    def __init__(self, *args, scalar_first=None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.added: list = []
+        self._scalar_first = scalar_first
+
+    def add(self, obj) -> None:
+        self.added.append(obj)
+
+    async def execute(self, stmt):  # type: ignore[override]
+        return _ScalarsResult(self._scalar_first)
+
+
+class _ScalarsResult:
+    def __init__(self, first_value) -> None:
+        self._first_value = first_value
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return self._first_value
+
+    def all(self):
+        return [self._first_value] if self._first_value is not None else []
+
+
+@pytest.mark.asyncio
+async def test_ingest_source_html(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = (
+        "<html><head><title>Hello World</title></head>"
+        "<body><nav>nope</nav><p>Body content here.</p>"
+        "<footer>foot</footer></body></html>"
+    )
+    _patch_httpx(monkeypatch, _FakeHTTPResponse(text=html))
+
+    session = _RecordingSession(scalar_first=None)
+    monkeypatch.setattr(sources_route, "session_scope", _make_session_scope(session))
+
+    # No-op the raw store side-effect.
+    async def _noop_put(self, content_hash: str, payload: bytes) -> None:  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(sources_route.RawStore, "put", _noop_put)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/sources", json={"url": "https://example.com/article"}
+        )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "ingested"
+    assert body["title"] == "Hello World"
+    assert body["chars"] > 0
+    assert len(body["content_hash"]) == 64
+    assert len(session.added) == 1
+    persisted = session.added[0]
+    assert persisted.title == "Hello World"
+    assert "Body content here." in persisted.raw_text
+    assert "nope" not in persisted.raw_text
+    assert "foot" not in persisted.raw_text
+
+
+@pytest.mark.asyncio
+async def test_ingest_source_duplicate(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = "<html><head><title>Dup</title></head><body><p>Same body.</p></body></html>"
+    _patch_httpx(monkeypatch, _FakeHTTPResponse(text=html))
+
+    existing = _make_source_row(title="Existing", content_hash="xx", raw_text="Same body.")
+    session = _RecordingSession(scalar_first=existing)
+    monkeypatch.setattr(sources_route, "session_scope", _make_session_scope(session))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/sources", json={"url": "https://example.com/dup"})
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "duplicate"
+    assert body["title"] == "Existing"
+    assert session.added == []  # no new row inserted
+
+
+@pytest.mark.asyncio
+async def test_ingest_source_4xx(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_httpx(monkeypatch, _FakeHTTPResponse(text="not found", status_code=404))
+
+    session = _RecordingSession(scalar_first=None)
+    monkeypatch.setattr(sources_route, "session_scope", _make_session_scope(session))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post("/sources", json={"url": "https://example.com/missing"})
+
+    assert resp.status_code == 400
+    assert "404" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_source_plain_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_httpx(
+        monkeypatch,
+        _FakeHTTPResponse(text="hello plain world", content_type="text/plain"),
+    )
+
+    session = _RecordingSession(scalar_first=None)
+    monkeypatch.setattr(sources_route, "session_scope", _make_session_scope(session))
+
+    async def _noop_put(self, content_hash: str, payload: bytes) -> None:  # noqa: ARG001
+        return None
+
+    monkeypatch.setattr(sources_route.RawStore, "put", _noop_put)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/sources", json={"url": "https://example.com/plain.txt"}
+        )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "ingested"
+    assert body["chars"] == len("hello plain world")
+    assert session.added[0].raw_text == "hello plain world"
+
+
 @pytest.mark.asyncio
 async def test_list_claims_filter_by_status(monkeypatch: pytest.MonkeyPatch) -> None:
     row = _make_claim_row(status="likely_true")

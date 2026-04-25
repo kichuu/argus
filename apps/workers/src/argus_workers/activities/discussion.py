@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from argus_core.db.models import (
@@ -8,6 +8,7 @@ from argus_core.db.models import (
     ClaimModel,
     DiscussionRunModel,
 )
+from sqlalchemy import select as _sa_select
 from argus_core.db.session import session_scope
 from argus_core.logging import get_logger
 from argus_core.schemas import DiscussionStatus, EvidenceRef
@@ -16,7 +17,70 @@ from argus_extraction.providers import family_of, get_provider
 from sqlalchemy import desc, select
 from temporalio import activity
 
+if TYPE_CHECKING:
+    from argus_retrieval.hybrid import HybridRetriever
+    from argus_retrieval.types import RetrievedSpan
+
 logger = get_logger(__name__)
+
+
+async def _build_hybrid_retriever() -> "HybridRetriever | None":
+    """Construct a real HybridRetriever; return None if any backend
+    (Qdrant/AGE/embedder/reranker) is unreachable.
+
+    Phase 4 must always have a fallback, so any failure here is logged at
+    warning level and surfaces as None to the caller.
+    """
+    try:
+        from argus_retrieval.embeddings import Embedder
+        from argus_retrieval.graph import GraphQuerier
+        from argus_retrieval.hybrid import HybridRetriever
+        from argus_retrieval.rerank import get_reranker
+        from argus_retrieval.vector import VectorIndex
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hybrid_retriever_import_failed", error=str(e))
+        return None
+
+    try:
+        vector_index = VectorIndex()
+        embedder = Embedder()
+        reranker = get_reranker()
+        graph = GraphQuerier()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hybrid_retriever_build_failed", error=str(e))
+        return None
+
+    return HybridRetriever(
+        vector_index=vector_index,
+        graph=graph,
+        reranker=reranker,
+        embedder=embedder,
+    )
+
+
+def _retrieved_span_to_evidence_dict(span: "RetrievedSpan") -> dict[str, Any]:
+    """Translate a RetrievedSpan into an EvidenceRef-shaped dict.
+
+    EvidenceRef enforces `char_end - char_start == len(verbatim_span)`. If a
+    RetrievedSpan ever lands here with mismatched offsets (e.g. defaulted to
+    0/0), we coerce them to (0, len(span)) so EvidenceRef.model_validate will
+    accept the dict without a re-verification step.
+    """
+    span_text = span.verbatim_span
+    char_start = int(getattr(span, "char_start", 0) or 0)
+    char_end = int(getattr(span, "char_end", 0) or 0)
+    if char_end - char_start != len(span_text):
+        char_start = 0
+        char_end = len(span_text)
+    ref = EvidenceRef(
+        source_id=span.source_id,
+        verbatim_span=span_text,
+        char_start=char_start,
+        char_end=char_end,
+        fetched_at=span.fetched_at,
+        trust_tier=int(span.trust_tier),
+    )
+    return ref.model_dump(mode="json")
 
 
 @activity.defn
@@ -74,15 +138,58 @@ async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
         row = await session.get(DiscussionRunModel, did)
         if row is None:
             raise RuntimeError(f"discussion {discussion_id} not found")
-        pack = await _baseline_evidence_pack(row.vertical)
+        topic = row.topic
+        vertical = row.vertical
+
+    pack: list[dict[str, Any]] = []
+    source = "baseline"
+    retriever = await _build_hybrid_retriever()
+    if retriever is not None:
+        try:
+            spans = await retriever.retrieve(
+                topic, top_k=20, recency_boost=True
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "hybrid_retrieve_failed_falling_back_baseline",
+                discussion_id=discussion_id,
+                error=str(e),
+            )
+            spans = []
+        for span in spans:
+            try:
+                pack.append(_retrieved_span_to_evidence_dict(span))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "retrieved_span_translation_failed",
+                    discussion_id=discussion_id,
+                    error=str(e),
+                )
+        if pack:
+            source = "hybrid"
+
+    if not pack:
+        pack = await _baseline_evidence_pack(vertical)
+        source = "baseline"
+
+    async with session_scope() as session:
+        row = await session.get(DiscussionRunModel, did)
+        if row is None:
+            raise RuntimeError(f"discussion {discussion_id} not found")
         row.evidence_pack = pack
         row.status = DiscussionStatus.RESEARCHING.value
+
     logger.info(
         "assemble_evidence_pack.done",
         discussion_id=discussion_id,
         evidence_count=len(pack),
+        source=source,
     )
-    return {"discussion_id": discussion_id, "evidence_count": len(pack)}
+    return {
+        "discussion_id": discussion_id,
+        "evidence_count": len(pack),
+        "source": source,
+    }
 
 
 class _EvidencePackRetriever:
@@ -116,7 +223,17 @@ async def run_discussion_graph(discussion_id: str) -> dict[str, Any]:
         row.status = DiscussionStatus.DEBATING.value
 
     provider = get_provider("openai")
-    retriever = _EvidencePackRetriever(evidence_dicts)
+    # The pack is pre-assembled by `assemble_evidence_pack` (which uses
+    # HybridRetriever when Qdrant/AGE are up, baseline otherwise). The discussion
+    # graph then reasons over that static pack — no need for a live retriever
+    # inside the graph, which would re-hit Qdrant per persona and cascade-fail
+    # when it's down.
+    retriever: Any = _EvidencePackRetriever(evidence_dicts)
+    logger.info(
+        "run_discussion_graph.using_static_pack",
+        discussion_id=discussion_id,
+        evidence_count=len(evidence_dicts),
+    )
 
     graph = DiscussionGraph(
         retriever=retriever,
@@ -148,9 +265,32 @@ async def persist_results(discussion_id: str, graph_result: dict[str, Any]) -> d
     did = UUID(discussion_id)
     messages = graph_result.get("messages", []) or []
     final_claims = graph_result.get("final_claims", []) or []
-    final_claim_ids = [str(c.get("id")) for c in final_claims if c.get("id")]
+    final_claim_ids: list[str] = []
 
     async with session_scope() as session:
+        # Persist each synthesized claim as a ClaimModel row, idempotent by id.
+        for c in final_claims:
+            try:
+                cid = UUID(str(c.get("id"))) if c.get("id") else uuid4()
+            except (ValueError, TypeError):
+                cid = uuid4()
+            existing = await session.get(ClaimModel, cid)
+            if existing is not None:
+                final_claim_ids.append(str(cid))
+                continue
+            claim = ClaimModel(
+                id=cid,
+                statement=str(c.get("statement", "")),
+                status=str(c.get("status", "unverified")),
+                confidence=float(c.get("confidence", 0.0)),
+                supporting_evidence=c.get("supporting_evidence", []) or [],
+                contradicting_evidence=c.get("contradicting_evidence", []) or [],
+                affected_entities=[str(e) for e in (c.get("affected_entities") or [])],
+                agent_consensus=c.get("agent_consensus", {}) or {},
+            )
+            session.add(claim)
+            final_claim_ids.append(str(cid))
+
         row = await session.get(DiscussionRunModel, did)
         if row is not None:
             row.final_claim_ids = final_claim_ids

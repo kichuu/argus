@@ -1,5 +1,7 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { AddSourceModal } from "@/components/ui/AddSourceModal";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { Dot } from "@/components/ui/Dot";
@@ -7,10 +9,11 @@ import { KV } from "@/components/ui/KV";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Sparkline } from "@/components/ui/Sparkline";
-import { api } from "@/lib/api";
+import { api, type SourceIngestResponse } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
 
 export function SourcesScreen() {
+  const queryClient = useQueryClient();
   const remote = useQuery({
     queryKey: ["sources"],
     queryFn: api.sources,
@@ -18,8 +21,29 @@ export function SourcesScreen() {
     staleTime: 30_000,
   });
 
+  const [modalOpen, setModalOpen] = useState(false);
+  const [lastIngest, setLastIngest] = useState<SourceIngestResponse | null>(null);
+
   const sources = remote.data && remote.data.length > 0 ? null : ARGUS_DATA.SOURCES;
   const apiOnline = remote.isSuccess && (remote.data?.length ?? 0) > 0;
+
+  async function handleIngested(result: SourceIngestResponse) {
+    setLastIngest(result);
+    await queryClient.invalidateQueries({ queryKey: ["sources"] });
+  }
+
+  async function handleExtractClaims() {
+    if (!lastIngest) return;
+    try {
+      await api.startDiscussion({
+        topic: `Extract and verify claims from: ${lastIngest.title}`,
+      });
+    } catch {
+      // Best-effort — keep the ingest banner visible if discussion start fails.
+    } finally {
+      setLastIngest(null);
+    }
+  }
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
@@ -29,7 +53,9 @@ export function SourcesScreen() {
         breadcrumb={`// ${apiOnline ? remote.data!.length : ARGUS_DATA.SOURCES.length} sources · ${apiOnline ? "live" : "mock"}`}
         right={
           <div className="row gap-2">
-            <Btn ghost>+ ADD RSS</Btn>
+            <Btn ghost onClick={() => setModalOpen(true)}>
+              + INGEST URL
+            </Btn>
             <Btn ghost>↗ MANUAL INGEST</Btn>
             <Btn primary>RETRY ALL</Btn>
           </div>
@@ -37,6 +63,35 @@ export function SourcesScreen() {
       />
       <div className="grow row" style={{ overflow: "hidden" }}>
         <div className="grow col" style={{ overflow: "hidden", padding: 16 }}>
+          {lastIngest && (
+            <div
+              className="row gap-2"
+              style={{
+                alignItems: "center",
+                padding: "8px 12px",
+                marginBottom: 10,
+                border: "1px solid var(--amber-dim)",
+                background: "var(--bg-1)",
+                fontSize: 11,
+                color: "var(--ink-0)",
+              }}
+            >
+              <Chip tone={lastIngest.status === "duplicate" ? "amber" : "green"}>
+                {lastIngest.status.toUpperCase()}
+              </Chip>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {lastIngest.status === "duplicate" ? "Already ingested: " : "Ingested: "}
+                <strong>{lastIngest.title}</strong>{" "}
+                <span className="muted">· {lastIngest.chars.toLocaleString()} chars</span>
+              </span>
+              <Btn ghost onClick={handleExtractClaims} style={{ fontSize: 9, padding: "3px 8px" }}>
+                EXTRACT CLAIMS
+              </Btn>
+              <Btn ghost onClick={() => setLastIngest(null)} style={{ fontSize: 9, padding: "3px 8px" }}>
+                ×
+              </Btn>
+            </div>
+          )}
           <div
             style={{
               display: "grid",
@@ -156,6 +211,11 @@ export function SourcesScreen() {
           </Panel>
         </div>
       </div>
+      <AddSourceModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onIngested={handleIngested}
+      />
     </div>
   );
 }

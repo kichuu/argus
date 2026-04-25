@@ -2,12 +2,12 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from argus_core.db.models import EntityModel
+from argus_core.db.models import EntityModel, RelationModel
 from argus_core.db.session import session_scope
 from argus_core.schemas import EntityType
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 router = APIRouter(prefix="/entities", tags=["entities"])
 
@@ -30,6 +30,16 @@ class EntityDetail(BaseModel):
     description: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class RelationOut(BaseModel):
+    id: UUID
+    subject_id: UUID
+    relation_type: str
+    object_id: UUID
+    confidence: float | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
 
 
 def _to_summary(row: EntityModel) -> EntityOut:
@@ -86,3 +96,38 @@ async def get_entity(entity_id: UUID) -> EntityDetail:
                 status_code=status.HTTP_404_NOT_FOUND, detail="entity not found"
             )
         return _to_detail(row)
+
+
+@router.get("/{entity_id}/relations", response_model=list[RelationOut])
+async def list_entity_relations(entity_id: UUID) -> list[RelationOut]:
+    async with session_scope() as session:
+        entity = await session.get(EntityModel, entity_id)
+        if entity is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="entity not found"
+            )
+
+        stmt = (
+            select(RelationModel)
+            .where(
+                or_(
+                    RelationModel.subject_id == entity_id,
+                    RelationModel.object_id == entity_id,
+                )
+            )
+            .order_by(RelationModel.created_at.desc())
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+
+    return [
+        RelationOut(
+            id=r.id,
+            subject_id=r.subject_id,
+            relation_type=r.relation_type,
+            object_id=r.object_id,
+            confidence=r.confidence,
+            valid_from=r.valid_from,
+            valid_to=r.valid_to,
+        )
+        for r in rows
+    ]

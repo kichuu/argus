@@ -45,6 +45,15 @@ export type DiscussionSummary = {
   claim_count?: number;
 };
 
+export type SourceIngestResponse = {
+  id: string;
+  title: string;
+  content_hash: string;
+  chars: number;
+  status: "ingested" | "duplicate";
+  trust_tier?: number | null;
+};
+
 export type DiscussionMessage = {
   id?: string;
   agent_id?: string;
@@ -52,6 +61,24 @@ export type DiscussionMessage = {
   content?: string;
   evidence_refs?: unknown[];
   persona_id?: string;
+  created_at?: string;
+};
+
+export type RelationSummary = {
+  id: string;
+  subject_id: string;
+  relation_type: string;
+  object_id: string;
+  confidence?: number;
+  valid_from?: string | null;
+  valid_to?: string | null;
+};
+
+export type PersonaSummary = {
+  id: string;
+  frame: string;
+  description: string;
+  knowledge_emphasis: string[];
   created_at?: string;
 };
 
@@ -66,6 +93,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     throw new Error(`api ${res.status}: ${path}`);
   }
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return (await res.json()) as T;
 }
 
@@ -79,6 +109,11 @@ export const api = {
   entity: (id: string) => request<EntitySummary>(`/entities/${id}`),
   sources: () => request<SourceSummary[]>("/sources"),
   source: (id: string) => request<SourceSummary>(`/sources/${id}`),
+  ingestSource: (body: { url: string }) =>
+    request<SourceIngestResponse>("/sources", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   discussions: () => request<DiscussionSummary[]>("/discussions"),
   discussion: (id: string) => request<DiscussionSummary>(`/discussions/${id}`),
   discussionMessages: (id: string) =>
@@ -90,4 +125,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  entityRelations: (id: string) =>
+    request<RelationSummary[]>(`/entities/${id}/relations`),
+  personas: () => request<PersonaSummary[]>("/personas"),
+  persona: (id: string) => request<PersonaSummary>(`/personas/${id}`),
+  createPersona: (body: {
+    frame: string;
+    description: string;
+    knowledge_emphasis: string[];
+  }) =>
+    request<PersonaSummary>("/personas", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deletePersona: (id: string) =>
+    request<void>(`/personas/${id}`, { method: "DELETE" }),
 };

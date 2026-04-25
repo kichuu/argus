@@ -1,11 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { KV } from "@/components/ui/KV";
+import { MockBadge } from "@/components/ui/MockBadge";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Segmented } from "@/components/ui/Segmented";
-import { ARGUS_DATA, type KGEntity } from "@/mock/data";
+import { api } from "@/lib/api";
+import { apiStatus } from "@/lib/api-status";
+import { ARGUS_DATA, type KGEntity, type KGEdge } from "@/mock/data";
 
 const W = 800;
 const H = 600;
@@ -23,25 +27,108 @@ const TYPE_COLOR: Record<string, string> = {
 
 const FILTERS = ["all", "country", "person", "org", "company", "event", "place", "doc", "asset"] as const;
 
+// Stable hash → [0,1) used to deterministically lay out backend entities on the
+// existing SVG canvas without changing the viz library.
+function hash01(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+function placeEntity(id: string, axis: 0 | 1): number {
+  // Keep nodes inside the inner 80% of the canvas, away from edges.
+  const v = hash01(`${id}:${axis}`);
+  return 0.1 + v * 0.8;
+}
+
 export function KGScreen() {
   const D = ARGUS_DATA;
-  const [sel, setSel] = useState<KGEntity | null>(
-    D.KG_ENTITIES.find((e) => e.id === "tw") ?? D.KG_ENTITIES[0],
-  );
+
+  const entitiesQuery = useQuery({
+    queryKey: ["entities"],
+    queryFn: api.entities,
+    retry: 0,
+    staleTime: 30_000,
+  });
+
+  const status = apiStatus(entitiesQuery);
+  const apiOnline = status.online && (entitiesQuery.data?.length ?? 0) > 0;
+
+  // Build live KG entities from API; fall back to mock when offline / empty.
+  const liveEntities: KGEntity[] = useMemo(() => {
+    if (!apiOnline || !entitiesQuery.data) return [];
+    return entitiesQuery.data.map((e) => ({
+      id: e.id,
+      label: e.canonical_name ?? e.name ?? e.id,
+      type: (e.type ?? "place").toLowerCase(),
+      x: placeEntity(e.id, 0),
+      y: placeEntity(e.id, 1),
+      deg: 1,
+    }));
+  }, [apiOnline, entitiesQuery.data]);
+
+  const entities: KGEntity[] = apiOnline ? liveEntities : D.KG_ENTITIES;
+
+  const [sel, setSel] = useState<KGEntity | null>(null);
   const [filter, setFilter] = useState<string>("all");
 
-  const ents = filter === "all" ? D.KG_ENTITIES : D.KG_ENTITIES.filter((e) => e.type === filter);
+  // Default selection: pick first entity once data resolves; prefer "tw" mock id.
+  const effectiveSel: KGEntity | null =
+    sel ??
+    (apiOnline
+      ? entities[0] ?? null
+      : (entities.find((e) => e.id === "tw") ?? entities[0] ?? null));
+
+  const relationsQuery = useQuery({
+    queryKey: ["entity-relations", effectiveSel?.id],
+    queryFn: () => api.entityRelations(effectiveSel!.id),
+    enabled: apiOnline && !!effectiveSel,
+    retry: 0,
+    staleTime: 30_000,
+  });
+
+  const ents = filter === "all" ? entities : entities.filter((e) => e.type === filter);
   const entIds = new Set(ents.map((e) => e.id));
-  const edges = D.KG_EDGES.filter(([a, b]) => entIds.has(a) && entIds.has(b));
+
+  // Live edges = relations from the selected entity, restricted to known nodes.
+  const liveEdges: KGEdge[] = useMemo(() => {
+    if (!apiOnline || !relationsQuery.data) return [];
+    return relationsQuery.data.map<KGEdge>((r) => [
+      r.subject_id,
+      r.object_id,
+      r.relation_type,
+    ]);
+  }, [apiOnline, relationsQuery.data]);
+
+  const allEdges: KGEdge[] = apiOnline ? liveEdges : D.KG_EDGES;
+  const edges = allEdges.filter(([a, b]) => entIds.has(a) && entIds.has(b));
+
+  // Compute degree by counting edges per node (so live data lights up correctly).
+  const degByNode = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [a, b] of allEdges) {
+      m.set(a, (m.get(a) ?? 0) + 1);
+      m.set(b, (m.get(b) ?? 0) + 1);
+    }
+    return m;
+  }, [allEdges]);
+
+  const breadcrumb = apiOnline
+    ? `// ${entities.length} entities · ${allEdges.length} edges · live`
+    : `// ${D.KG_ENTITIES.length} entities · ${D.KG_EDGES.length} edges · v.t = 14:22:08Z`;
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
         code="03·KG"
         title="Knowledge Graph Explorer"
-        breadcrumb={`// ${D.KG_ENTITIES.length} entities · ${D.KG_EDGES.length} edges · v.t = 14:22:08Z`}
+        breadcrumb={breadcrumb}
         right={
-          <div className="row gap-2">
+          <div className="row gap-2" style={{ alignItems: "center" }}>
+            <MockBadge online={apiOnline} loading={status.loading} />
             <Segmented size="sm" options={FILTERS} value={filter} onChange={setFilter} />
             <Btn ghost>◐ EMBEDDINGS</Btn>
             <Btn ghost>↗ EXPORT</Btn>
@@ -60,14 +147,14 @@ export function KGScreen() {
             preserveAspectRatio="xMidYMid meet"
           >
             {edges.map(([a, b, rel], i) => {
-              const ea = D.KG_ENTITIES.find((e) => e.id === a);
-              const eb = D.KG_ENTITIES.find((e) => e.id === b);
+              const ea = entities.find((e) => e.id === a);
+              const eb = entities.find((e) => e.id === b);
               if (!ea || !eb) return null;
               const x1 = ea.x * W;
               const y1 = ea.y * H;
               const x2 = eb.x * W;
               const y2 = eb.y * H;
-              const isSel = sel && (sel.id === a || sel.id === b);
+              const isSel = effectiveSel && (effectiveSel.id === a || effectiveSel.id === b);
               return (
                 <g key={i}>
                   <line
@@ -97,8 +184,9 @@ export function KGScreen() {
             {ents.map((e) => {
               const cx = e.x * W;
               const cy = e.y * H;
-              const isSel = sel?.id === e.id;
-              const r = 4 + Math.sqrt(e.deg) * 1.5;
+              const isSel = effectiveSel?.id === e.id;
+              const deg = apiOnline ? (degByNode.get(e.id) ?? 0) : e.deg;
+              const r = 4 + Math.sqrt(Math.max(deg, 1)) * 1.5;
               const c = TYPE_COLOR[e.type] || "var(--ink-1)";
               return (
                 <g key={e.id} style={{ cursor: "pointer" }} onClick={() => setSel(e)}>
@@ -125,7 +213,9 @@ export function KGScreen() {
               );
             })}
             <text x={10} y={18} fontFamily="JetBrains Mono" fontSize="9" fill="var(--ink-3)">
-              FORCE-DIRECTED · t-SNE COMPONENTS · CONFIDENCE OVERLAY OFF
+              {apiOnline
+                ? "LIVE · ENTITY GRAPH · CONFIDENCE OVERLAY OFF"
+                : "FORCE-DIRECTED · t-SNE COMPONENTS · CONFIDENCE OVERLAY OFF"}
             </text>
           </svg>
 
@@ -163,11 +253,11 @@ export function KGScreen() {
             overflowY: "auto",
           }}
         >
-          {sel && (
+          {effectiveSel && (
             <>
               <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
                 <div className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                  {sel.type}
+                  {effectiveSel.type}
                 </div>
                 <div
                   style={{
@@ -177,10 +267,15 @@ export function KGScreen() {
                     fontWeight: 600,
                   }}
                 >
-                  {sel.label}
+                  {effectiveSel.label}
                 </div>
                 <div className="row gap-2" style={{ marginTop: 8 }}>
-                  <Chip tone="amber">deg {sel.deg}</Chip>
+                  <Chip tone="amber">
+                    deg{" "}
+                    {apiOnline
+                      ? degByNode.get(effectiveSel.id) ?? 0
+                      : effectiveSel.deg}
+                  </Chip>
                   <Chip>conf 0.91</Chip>
                 </div>
               </div>
@@ -189,25 +284,72 @@ export function KGScreen() {
                   className="tt-up"
                   style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 6 }}
                 >
-                  HISTORY · validity windows
+                  RELATIONS{" "}
+                  {apiOnline && relationsQuery.data
+                    ? `(${relationsQuery.data.length})`
+                    : "· validity windows"}
                 </div>
-                {[
-                  { t: "2024-05-20", e: "Lai Ching-te inaugurated" },
-                  { t: "2025-01-04", e: "Conscription extended to 1y" },
-                  { t: "2026-03-11", e: "Hai Kun commissioned" },
-                  { t: "2026-04-22", e: "Joint Sword 2026-A response" },
-                ].map((h, i) => (
-                  <div
-                    key={i}
-                    className="row gap-3"
-                    style={{ padding: "4px 0", fontSize: 10 }}
-                  >
-                    <span className="tab muted" style={{ minWidth: 70 }}>
-                      {h.t}
-                    </span>
-                    <span style={{ color: "var(--ink-1)" }}>{h.e}</span>
-                  </div>
-                ))}
+                {apiOnline ? (
+                  relationsQuery.isLoading ? (
+                    <div className="muted" style={{ fontSize: 10 }}>
+                      loading...
+                    </div>
+                  ) : (relationsQuery.data?.length ?? 0) === 0 ? (
+                    <div className="muted" style={{ fontSize: 10 }}>
+                      no relations
+                    </div>
+                  ) : (
+                    relationsQuery.data!.map((r) => {
+                      const otherId =
+                        r.subject_id === effectiveSel.id
+                          ? r.object_id
+                          : r.subject_id;
+                      const other = entities.find((e) => e.id === otherId);
+                      const dir =
+                        r.subject_id === effectiveSel.id ? "→" : "←";
+                      return (
+                        <div
+                          key={r.id}
+                          className="row gap-3"
+                          style={{ padding: "4px 0", fontSize: 10 }}
+                        >
+                          <span
+                            className="tab amber"
+                            style={{ minWidth: 70, fontSize: 9 }}
+                          >
+                            {dir} {r.relation_type}
+                          </span>
+                          <span style={{ color: "var(--ink-1)", flex: 1 }}>
+                            {other?.label ?? otherId}
+                          </span>
+                          {typeof r.confidence === "number" && (
+                            <span className="muted tab" style={{ fontSize: 9 }}>
+                              {r.confidence.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )
+                ) : (
+                  [
+                    { t: "2024-05-20", e: "Lai Ching-te inaugurated" },
+                    { t: "2025-01-04", e: "Conscription extended to 1y" },
+                    { t: "2026-03-11", e: "Hai Kun commissioned" },
+                    { t: "2026-04-22", e: "Joint Sword 2026-A response" },
+                  ].map((h, i) => (
+                    <div
+                      key={i}
+                      className="row gap-3"
+                      style={{ padding: "4px 0", fontSize: 10 }}
+                    >
+                      <span className="tab muted" style={{ minWidth: 70 }}>
+                        {h.t}
+                      </span>
+                      <span style={{ color: "var(--ink-1)" }}>{h.e}</span>
+                    </div>
+                  ))
+                )}
               </div>
               <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
                 <div

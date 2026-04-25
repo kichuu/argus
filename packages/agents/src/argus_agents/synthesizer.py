@@ -15,6 +15,14 @@ logger = get_logger(__name__)
 _REJECTED_RE = re.compile(r"REJECTED_EVIDENCE_IDS:\s*([^\n]+)")
 
 
+def _normalize_eid(raw: str) -> str:
+    """Strip the `ev:` / `[ev:..]` decorations the LLM may have copied from prompts."""
+    s = raw.strip().strip("[](),")
+    if s.lower().startswith("ev:"):
+        s = s[3:]
+    return s.strip().lower()
+
+
 class _ProposedClaim(BaseModel):
     statement: str = Field(min_length=1)
     supporting_evidence_ids: list[str] = Field(min_length=1)
@@ -29,11 +37,19 @@ class _ClaimSlate(BaseModel):
 
 
 _SYNTH_PROMPT = """You synthesize the discussion into atomic Claims.
-Output ONLY JSON. Each claim:
+Output ONLY JSON conforming to the schema. Each claim:
 - statement: a single, verifiable atomic sentence (no prose).
 - supporting_evidence_ids: list of evidence UUIDs from the pack that back it.
 - contradicting_evidence_ids: list of evidence UUIDs from the pack that contradict it.
 - agree / disagree / uncertain: counts across persona messages.
+
+CRITICAL ID FORMAT — read carefully, deviations cause silent drops:
+- Each evidence item in the pack is rendered as `- [ev:<UUID>] "span"`.
+- In your `supporting_evidence_ids` and `contradicting_evidence_ids`, write
+  ONLY the bare UUID. Do NOT include the `ev:` prefix or brackets.
+- Example correct: "supporting_evidence_ids": ["12345678-aaaa-bbbb-cccc-111111111111"]
+- Example WRONG: ["[ev:12345678-aaaa-bbbb-cccc-111111111111]"]  ← drops the claim
+- Example WRONG: ["ev:12345678-..."]                              ← drops the claim
 
 Topic: {topic}
 
@@ -46,7 +62,8 @@ Persona messages:
 Critic flags:
 {critic_block}
 
-Drop any candidate claim that lacks at least one supporting evidence id from the pack."""
+Drop any candidate claim that lacks at least one supporting evidence id from the pack.
+Aim for 3-7 claims; merge near-duplicates; cite multiple evidence UUIDs when applicable."""
 
 
 class SynthesizerAgent(Agent):
@@ -57,7 +74,7 @@ class SynthesizerAgent(Agent):
     async def step(self, state: DiscussionState) -> DiscussionState:
         pack = state.evidence_pack
         evidence_by_id: dict[str, EvidenceRef] = {
-            str(e.source_id): e for e in pack.evidence
+            str(e.source_id).lower(): e for e in pack.evidence
         }
 
         evidence_block = "\n".join(
@@ -97,10 +114,10 @@ class SynthesizerAgent(Agent):
         rejected_ids: set[str] = set()
         for cmsg in critic_msgs:
             for ref in cmsg.evidence_refs:
-                critic_flagged_ids.add(str(ref.source_id))
+                critic_flagged_ids.add(str(ref.source_id).lower())
             for match in _REJECTED_RE.finditer(cmsg.content):
                 for eid in match.group(1).split(","):
-                    eid_clean = eid.strip()
+                    eid_clean = _normalize_eid(eid)
                     if eid_clean:
                         rejected_ids.add(eid_clean)
 
@@ -108,19 +125,27 @@ class SynthesizerAgent(Agent):
         for prop in slate.claims:
             # Drop claims whose supporting evidence was rejected outright by
             # the critic; those are "no" verdicts per the protocol.
+            normalized_supporting = [_normalize_eid(eid) for eid in prop.supporting_evidence_ids]
             supporting_ids = [
                 eid
-                for eid in prop.supporting_evidence_ids
+                for eid in normalized_supporting
                 if eid in evidence_by_id and eid not in rejected_ids
             ]
             supporting = [evidence_by_id[eid] for eid in supporting_ids]
             if not supporting:
-                logger.warning("synth_claim_no_evidence", statement=prop.statement)
+                logger.warning(
+                    "synth_claim_no_evidence",
+                    statement=prop.statement,
+                    raw_ids=prop.supporting_evidence_ids,
+                    normalized=normalized_supporting,
+                    available=list(evidence_by_id.keys()),
+                )
                 continue
 
+            normalized_contradicting = [_normalize_eid(eid) for eid in prop.contradicting_evidence_ids]
             contradicting = [
                 evidence_by_id[eid]
-                for eid in prop.contradicting_evidence_ids
+                for eid in normalized_contradicting
                 if eid in evidence_by_id
             ]
 

@@ -1,15 +1,19 @@
 "use client";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { Dot } from "@/components/ui/Dot";
 import { KV } from "@/components/ui/KV";
+import { MockBadge } from "@/components/ui/MockBadge";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Segmented } from "@/components/ui/Segmented";
-import { ARGUS_DATA, type GeoEvent } from "@/mock/data";
+import { api } from "@/lib/api";
+import { apiStatus } from "@/lib/api-status";
+import { ARGUS_DATA, type GeoEvent, type Ticker } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
 
 const W = 1000;
@@ -30,6 +34,26 @@ export function WorldView() {
   const [hover, setHover] = useState<GeoEvent | null>(null);
   const [sel, setSel] = useState<GeoEvent | null>(D.EVENTS[0]);
 
+  const sourcesQuery = useQuery({
+    queryKey: ["sources"],
+    queryFn: api.sources,
+    retry: 0,
+    staleTime: 30_000,
+  });
+
+  const status = apiStatus(sourcesQuery);
+  const apiOnline = status.online && (sourcesQuery.data?.length ?? 0) > 0;
+
+  // Build ticker from latest 20 sources; fall back to mock when API offline/empty.
+  const ticker: Ticker[] = useMemo(() => {
+    if (!apiOnline || !sourcesQuery.data) return D.TICKER;
+    return sourcesQuery.data.slice(0, 20).map((s) => ({
+      t: s.type ?? "src",
+      src: s.name ?? s.id,
+      line: s.status ? `status: ${s.status}` : "ingested",
+    }));
+  }, [apiOnline, sourcesQuery.data, D.TICKER]);
+
   const filtered = topic === "all" ? D.EVENTS : D.EVENTS.filter((e) => e.topic === topic);
 
   return (
@@ -39,7 +63,8 @@ export function WorldView() {
         title="WorldView"
         breadcrumb="// 24h · all topics · 24 events"
         right={
-          <div className="row gap-2">
+          <div className="row gap-2" style={{ alignItems: "center" }}>
+            <MockBadge online={apiOnline} loading={status.loading} />
             <Segmented
               options={[
                 { value: "events", label: "Events" },
@@ -336,7 +361,7 @@ export function WorldView() {
             id="H"
             title="Hotspots"
             sub="ranked · 24h"
-            style={{ flex: 1, border: "none", borderTop: "1px solid var(--line-2)" }}
+            style={{ border: "none", borderTop: "1px solid var(--line-2)" }}
           >
             <div className="col">
               {D.HOTSPOTS.map((h) => (
@@ -374,6 +399,49 @@ export function WorldView() {
                     </div>
                     <Bar value={h.severity} width={50} color="var(--amber)" />
                   </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel
+            id="T"
+            title="Live Ticker"
+            sub={apiOnline ? `${ticker.length} · sources` : "offline · mock"}
+            style={{ flex: 1, border: "none", borderTop: "1px solid var(--line-2)" }}
+            right={
+              <>
+                <Dot tone={apiOnline ? "green" : "amber"} pulse />
+                <span
+                  className="tt-up"
+                  style={{
+                    fontSize: 9,
+                    color: apiOnline ? "var(--green)" : "var(--amber)",
+                  }}
+                >
+                  {apiOnline ? "LIVE" : "MOCK"}
+                </span>
+              </>
+            }
+          >
+            <div className="col" style={{ overflowY: "auto" }}>
+              {ticker.map((t, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: "6px 10px",
+                    borderBottom: "1px solid var(--line-1)",
+                    fontSize: 10,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <div className="row gap-2" style={{ alignItems: "baseline" }}>
+                    <span className="tab muted">{t.t}</span>
+                    <span className="amber tt-up" style={{ fontSize: 9 }}>
+                      {t.src}
+                    </span>
+                  </div>
+                  <div style={{ color: "var(--ink-1)", marginTop: 2 }}>{t.line}</div>
                 </div>
               ))}
             </div>

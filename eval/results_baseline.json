@@ -1,0 +1,29 @@
+{
+  "citation_precision": 0.0,
+  "citation_recall": 0.0,
+  "exact_match_rate": 0.0,
+  "hallucination_rate": 0.0,
+  "n_gold": 10,
+  "n_extracted": 0,
+  "_meta": {
+    "captured_at": "2026-04-25",
+    "gold_file": "eval/gold.jsonl",
+    "extractor_run": "errored",
+    "extractor_error": "TypeError: ClaimExtractor.__init__() missing 1 required positional argument: 'provider' (eval/harness/runner.py instantiates ClaimExtractor() with no Provider; pre-existing harness bug, out of scope for enrich_gold change set)",
+    "verified_gold_items": 0,
+    "placeholder_gold_items": 10,
+    "placeholder_ids": [
+      "geo-2024-uk-ukraine-security-pact",
+      "geo-2023-finland-nato",
+      "geo-2024-sweden-nato",
+      "geo-2023-eu-12th-sanctions-russia",
+      "geo-2023-ofac-wagner-designation",
+      "geo-2024-iaea-iran-60pct-enrichment",
+      "geo-2023-dprk-hwasong-18-test",
+      "geo-2024-houthi-red-sea-disruption",
+      "geo-2022-wto-us-steel-aluminum-ruling",
+      "geo-2022-unga-es11-1-vote"
+    ],
+    "notes": "Baseline before enrichment. All 10 gold items currently use https://example.invalid/argus-placeholder/* URLs and have null offsets, so citation_precision is structurally 0 regardless of extractor output. Replace placeholder URLs with real publisher URLs (Reuters, AP, gov.uk, treasury.gov, un.org, IAEA, etc.) and re-run scripts/enrich_gold.py to make the eval load-bearing. The harness runner also currently fails to instantiate ClaimExtractor (missing provider arg) -- needs a separate fix."
+  }
+}

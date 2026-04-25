@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from argus_api import __version__
-from argus_api.routes import claims, discussions, entities, health, sources
+from argus_api.routes import claims, discussions, entities, health, personas, sources
 
 logger = get_logger(__name__)
 
@@ -38,3 +38,4 @@ app.include_router(claims.router)
 app.include_router(entities.router)
 app.include_router(sources.router)
 app.include_router(discussions.router)
+app.include_router(personas.router)
