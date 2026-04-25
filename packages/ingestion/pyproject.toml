@@ -11,6 +11,7 @@ dependencies = [
     "simhash>=2.1",
     "beautifulsoup4>=4.12",
     "lxml>=5.3",
+    "aioboto3>=15.5.0",
 ]
 
 [build-system]
