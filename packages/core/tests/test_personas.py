@@ -75,3 +75,55 @@ def test_load_persona_library_returns_empty_when_missing() -> None:
     lib = load_persona_library(Path("/nonexistent/personas.yaml"))
     assert isinstance(lib, PersonaLibrary)
     assert lib.verticals == {}
+
+
+def test_persona_template_round_trips_faction_and_color_token() -> None:
+    tpl = PersonaTemplate(
+        frame="hawkish risk lens",
+        description="risk-aware",
+        knowledge_emphasis=["tail risk"],
+        faction="hawks",
+        color_token="--p-5",
+    )
+    assert tpl.faction == "hawks"
+    assert tpl.color_token == "--p-5"
+
+    dumped = tpl.model_dump()
+    assert dumped["faction"] == "hawks"
+    assert dumped["color_token"] == "--p-5"
+
+    rehydrated = PersonaTemplate.model_validate(dumped)
+    assert rehydrated.faction == "hawks"
+    assert rehydrated.color_token == "--p-5"
+
+
+def test_persona_template_faction_and_color_token_default_to_none() -> None:
+    tpl = PersonaTemplate(frame="plain lens", description="d")
+    assert tpl.faction is None
+    assert tpl.color_token is None
+
+
+def test_to_personas_carries_faction_and_color_token() -> None:
+    lib = PersonaLibrary(
+        verticals={
+            "civic": [
+                PersonaTemplate(
+                    frame="regulator viewpoint",
+                    description="institutional",
+                    knowledge_emphasis=["rulemaking"],
+                    faction="institutional",
+                    color_token="--p-1",
+                ),
+                PersonaTemplate(
+                    frame="plain lens",
+                    description="no tags",
+                ),
+            ]
+        }
+    )
+    personas = lib.to_personas(lib.for_vertical("civic", include_general=False))
+    assert len(personas) == 2
+    assert personas[0].faction == "institutional"
+    assert personas[0].color_token == "--p-1"
+    assert personas[1].faction is None
+    assert personas[1].color_token is None

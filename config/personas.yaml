@@ -16,6 +16,8 @@ verticals:
         - inflation dynamics
         - financial stability
         - forward guidance
+      faction: institutional
+      color_token: "--p-1"
 
     - frame: "market analyst skeptic"
       description: >-
@@ -28,6 +30,8 @@ verticals:
         - liquidity conditions
         - credit spreads
         - regime shifts
+      faction: skeptics
+      color_token: "--p-4"
 
     - frame: "financial regulator viewpoint"
       description: >-
@@ -40,6 +44,8 @@ verticals:
         - disclosure regimes
         - resolution planning
         - consumer protection
+      faction: institutional
+      color_token: "--p-1"
 
     - frame: "household saver / consumer perspective"
       description: >-
@@ -52,6 +58,8 @@ verticals:
         - mortgage and credit costs
         - retirement security
         - deposit safety
+      faction: advocates
+      color_token: "--p-3"
 
     - frame: "heterodox / political-economy critic"
       description: >-
@@ -101,6 +109,8 @@ verticals:
         - model intercomparison
         - observational records
         - confidence levels
+      faction: technical
+      color_token: "--p-2"
 
     - frame: "energy systems engineer"
       description: >-
@@ -113,6 +123,8 @@ verticals:
         - storage economics
         - transmission constraints
         - critical minerals
+      faction: technical
+      color_token: "--p-2"
 
     - frame: "frontline / climate-vulnerable community lens"
       description: >-
@@ -125,6 +137,8 @@ verticals:
         - displacement and migration
         - heat and health
         - insurance retreat
+      faction: advocates
+      color_token: "--p-3"
 
     - frame: "climate-policy critic"
       description: >-
@@ -137,6 +151,8 @@ verticals:
         - trade competitiveness
         - policy reversal risk
         - regulatory burden
+      faction: skeptics
+      color_token: "--p-4"
 
     - frame: "ecological / biodiversity perspective"
       description: >-
@@ -186,6 +202,8 @@ verticals:
         - enforcement priorities
         - cost-benefit analysis
         - judicial deference
+      faction: institutional
+      color_token: "--p-1"
 
     - frame: "civil-liberties hawk"
       description: >-
@@ -198,6 +216,8 @@ verticals:
         - surveillance and privacy
         - speech and assembly
         - chilling effects
+      faction: hawks
+      color_token: "--p-5"
 
     - frame: "investigative journalist lens"
       description: >-
@@ -209,6 +229,8 @@ verticals:
         - source verification
         - conflict of interest
         - accountability gaps
+      faction: media
+      color_token: "--p-7"
 
     - frame: "constitutional / administrative-law scholar"
       description: >-
@@ -256,6 +278,8 @@ verticals:
         - policy implementation
         - litigation strategy
         - public mobilization
+      faction: advocates
+      color_token: "--p-3"
 
   geopolitics:
     - frame: "diplomat / foreign-ministry perspective"
@@ -269,6 +293,8 @@ verticals:
         - negotiation off-ramps
         - treaty obligations
         - back-channel diplomacy
+      faction: doves
+      color_token: "--p-6"
 
     - frame: "defense / military-strategy analyst"
       description: >-
@@ -281,6 +307,8 @@ verticals:
         - deterrence theory
         - command and control
         - escalation dynamics
+      faction: hawks
+      color_token: "--p-5"
 
     - frame: "intelligence-community analyst"
       description: >-
@@ -353,6 +381,8 @@ verticals:
         - verbatim verification
         - confidence labelling
         - common manipulation patterns
+      faction: skeptics
+      color_token: "--p-4"
 
     - frame: "statistician / methodologist"
       description: >-
@@ -377,6 +407,8 @@ verticals:
         - regime transitions
         - long-cycle indicators
         - counterfactual reasoning
+      faction: media
+      color_token: "--p-7"
 
     - frame: "ethics / public-philosophy lens"
       description: >-

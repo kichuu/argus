@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
@@ -69,6 +70,23 @@ class DiscussionDetail(BaseModel):
     messages_count: int
     final_claim_ids: list[UUID]
     error: str | None
+
+
+class DiscussionListItem(BaseModel):
+    id: UUID
+    topic: str
+    vertical: str
+    status: DiscussionStatus
+    started_at: datetime
+    completed_at: datetime | None
+    final_claim_count: int
+
+
+class DiscussionListResponse(BaseModel):
+    items: list[DiscussionListItem]
+    total: int
+    limit: int
+    offset: int
 
 
 async def _run_inline(discussion_id: str) -> None:
@@ -159,6 +177,54 @@ async def start_discussion(
         discussion_id=discussion_id,
         workflow_id=workflow_id,
         mode="temporal",
+    )
+
+
+@router.get("", response_model=DiscussionListResponse)
+async def list_discussions(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    status: DiscussionStatus | None = None,
+    vertical: str | None = None,
+) -> DiscussionListResponse:
+    """Paginated list of discussions, newest first."""
+    filters: list[Any] = []
+    if status is not None:
+        filters.append(DiscussionRunModel.status == status.value)
+    if vertical is not None:
+        filters.append(DiscussionRunModel.vertical == vertical)
+
+    count_stmt = select(func.count()).select_from(DiscussionRunModel)
+    list_stmt = select(DiscussionRunModel)
+    for clause in filters:
+        count_stmt = count_stmt.where(clause)
+        list_stmt = list_stmt.where(clause)
+
+    list_stmt = (
+        list_stmt.order_by(DiscussionRunModel.started_at.desc()).limit(limit).offset(offset)
+    )
+
+    total = (await session.execute(count_stmt)).scalar_one()
+    rows = (await session.execute(list_stmt)).scalars().all()
+
+    items = [
+        DiscussionListItem(
+            id=row.id,
+            topic=row.topic,
+            vertical=row.vertical,
+            status=DiscussionStatus(row.status),
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+            final_claim_count=len(row.final_claim_ids or []),
+        )
+        for row in rows
+    ]
+    return DiscussionListResponse(
+        items=items,
+        total=int(total),
+        limit=limit,
+        offset=offset,
     )
 
 

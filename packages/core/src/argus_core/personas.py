@@ -33,6 +33,8 @@ class PersonaTemplate(BaseModel):
     frame: str = Field(min_length=3, max_length=120)
     description: str
     knowledge_emphasis: list[str] = Field(default_factory=list)
+    faction: str | None = None
+    color_token: str | None = None
 
     @field_validator("frame")
     @classmethod
@@ -69,6 +71,8 @@ class PersonaLibrary(BaseModel):
                 frame=t.frame,
                 description=t.description,
                 knowledge_emphasis=list(t.knowledge_emphasis),
+                faction=t.faction,
+                color_token=t.color_token,
             )
             for t in templates
         ]

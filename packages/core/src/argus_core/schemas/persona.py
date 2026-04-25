@@ -23,6 +23,8 @@ class Persona(BaseModel):
     frame: str = Field(min_length=3, max_length=120)
     description: str
     knowledge_emphasis: list[str] = Field(default_factory=list)
+    faction: str | None = None
+    color_token: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @model_validator(mode="after")
