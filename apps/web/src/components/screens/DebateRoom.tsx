@@ -624,6 +624,7 @@ function OrchestrationStrip({
 function CenterView({
   transcriptRef,
   discussionId,
+  topic,
   messageList,
   stream,
   sStatus,
@@ -635,6 +636,7 @@ function CenterView({
 }: {
   transcriptRef: React.RefObject<HTMLDivElement | null>;
   discussionId: string | null;
+  topic: string;
   messageList: AgentMessage[];
   stream: ReturnType<typeof useDiscussionStream>;
   sStatus: DStatus;
@@ -729,7 +731,7 @@ function CenterView({
           </div>
         )}
         {discussionId && effective === "__synthesis__" && (
-          <SynthesisPanel claims={stream.claims} />
+          <SynthesisPanel claims={stream.claims} topic={topic} />
         )}
         {discussionId && effective !== "__synthesis__" && filteredMessages.length === 0 && hasStatus && (
           <div style={{ padding: 24, color: "var(--ink-3)", fontSize: 11, textAlign: "center" }}>
@@ -768,9 +770,172 @@ function CenterView({
   );
 }
 
-function SynthesisPanel({ claims }: { claims: Claim[] }) {
+function VerdictCard({ topic, claims }: { topic: string; claims: Claim[] }) {
+  const counts = { likely_true: 0, contested: 0, unverified: 0, likely_false: 0 };
+  let totalConf = 0;
+  let totalEvidence = 0;
+  const seenEv = new Set<string>();
+  for (const c of claims) {
+    counts[c.status] += 1;
+    totalConf += c.confidence;
+    for (const e of c.supporting_evidence) {
+      seenEv.add(e.source_id);
+    }
+  }
+  totalEvidence = seenEv.size;
+  const avgConf = claims.length > 0 ? totalConf / claims.length : 0;
+
+  // Headline: prefer highest-confidence likely_true; else highest-confidence overall.
+  const sorted = [...claims].sort((a, b) => b.confidence - a.confidence);
+  const headline = sorted.find((c) => c.status === "likely_true") ?? sorted[0];
+
+  // If every claim sits at exactly 0.5, the synthesizer hit the critic-cap.
+  const allCapped =
+    claims.length > 0 && claims.every((c) => Math.abs(c.confidence - 0.5) < 0.001);
+
+  let verdictTone: "green" | "amber" | "red" | "default" = "default";
+  let verdictLabel = "INCONCLUSIVE";
+  if (counts.likely_false > 0 && counts.likely_true === 0) {
+    verdictTone = "red";
+    verdictLabel = "REFUTED";
+  } else if (counts.contested > 0) {
+    verdictTone = "amber";
+    verdictLabel = "CONTESTED";
+  } else if (counts.likely_true > 0 && counts.unverified === 0) {
+    verdictTone = "green";
+    verdictLabel = "VERIFIED";
+  } else if (counts.likely_true > 0) {
+    verdictTone = "amber";
+    verdictLabel = "PARTIAL SUPPORT";
+  } else if (counts.unverified > 0) {
+    verdictTone = "default";
+    verdictLabel = "UNVERIFIED";
+  }
+
+  const verdictColor =
+    verdictTone === "green"
+      ? "var(--green)"
+      : verdictTone === "amber"
+        ? "var(--amber)"
+        : verdictTone === "red"
+          ? "var(--red)"
+          : "var(--ink-2)";
+
+  return (
+    <div
+      style={{
+        padding: 14,
+        borderBottom: "1px solid var(--line-2)",
+        background: "var(--bg-2)",
+      }}
+    >
+      <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 4 }}>
+        TOPIC
+      </div>
+      <div
+        style={{
+          fontSize: 12,
+          color: "var(--ink-1)",
+          marginBottom: 12,
+          fontStyle: "italic",
+          lineHeight: 1.4,
+        }}
+      >
+        {topic || "(no topic)"}
+      </div>
+
+      <div className="row gap-2" style={{ alignItems: "baseline", marginBottom: 8 }}>
+        <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-2)" }}>
+          VERDICT
+        </span>
+        <Chip tone={verdictTone}>
+          <Dot tone={verdictTone === "default" ? "ink" : verdictTone} size={6} />
+          {verdictLabel}
+        </Chip>
+        <div style={{ flex: 1 }} />
+        <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-2)" }}>
+          AGG CONF
+        </span>
+        <Bar value={avgConf} width={60} color={verdictColor} showVal />
+      </div>
+
+      {headline && (
+        <div
+          style={{
+            padding: "8px 10px",
+            border: `1px solid ${verdictColor}`,
+            background: "var(--bg-1)",
+            fontSize: 13,
+            color: "var(--ink-0)",
+            lineHeight: 1.5,
+            marginBottom: 10,
+          }}
+        >
+          <div className="tt-up" style={{ fontSize: 9, color: verdictColor, marginBottom: 4 }}>
+            ▸ HEADLINE
+          </div>
+          {headline.statement}
+        </div>
+      )}
+
+      <div className="row gap-3" style={{ flexWrap: "wrap", fontSize: 10 }}>
+        <span className="muted">
+          <span className="tab" style={{ color: "var(--ink-0)" }}>
+            {claims.length}
+          </span>{" "}
+          claims
+        </span>
+        <span className="muted">
+          <span className="tab" style={{ color: "var(--ink-0)" }}>
+            {totalEvidence}
+          </span>{" "}
+          unique sources
+        </span>
+        {counts.likely_true > 0 && (
+          <span style={{ color: "var(--green)" }}>
+            <span className="tab">{counts.likely_true}</span> true
+          </span>
+        )}
+        {counts.contested > 0 && (
+          <span style={{ color: "var(--amber)" }}>
+            <span className="tab">{counts.contested}</span> contested
+          </span>
+        )}
+        {counts.unverified > 0 && (
+          <span style={{ color: "var(--ink-2)" }}>
+            <span className="tab">{counts.unverified}</span> unverified
+          </span>
+        )}
+        {counts.likely_false > 0 && (
+          <span style={{ color: "var(--red)" }}>
+            <span className="tab">{counts.likely_false}</span> false
+          </span>
+        )}
+      </div>
+
+      {allCapped && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "6px 8px",
+            fontSize: 10,
+            color: "var(--ink-2)",
+            border: "1px dashed var(--line-2)",
+            background: "var(--bg-3)",
+          }}
+        >
+          ✕ confidence critic-capped at 0.5 — persona narrative was thin; the
+          synthesizer couldn&apos;t cross-check assertions against the cited spans.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SynthesisPanel({ claims, topic }: { claims: Claim[]; topic: string }) {
   return (
     <div className="col" style={{ overflowY: "auto" }}>
+      {claims.length > 0 && <VerdictCard topic={topic} claims={claims} />}
       {claims.length === 0 && (
         <div style={{ padding: 14, fontSize: 11, color: "var(--ink-3)" }}>
           synthesis produced no final claims.
@@ -1010,6 +1175,7 @@ export function DebateRoom() {
           <CenterView
             transcriptRef={transcriptRef}
             discussionId={discussionId}
+            topic={topic}
             messageList={messageList}
             stream={stream}
             sStatus={sStatus}
@@ -1087,7 +1253,7 @@ export function DebateRoom() {
             style={{ flex: 1, minHeight: 0 }}
           >
             {sStatus === "completed" ? (
-              <SynthesisPanel claims={stream.claims} />
+              <SynthesisPanel claims={stream.claims} topic={topic} />
             ) : (
               <div style={{ padding: 14, fontSize: 11, color: "var(--ink-3)" }}>
                 synthesis is generated when the debate completes.
