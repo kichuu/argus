@@ -9,13 +9,11 @@ Rerun any time:  uv run python -m eval.seed_gold
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from argus_core.schemas import ClaimStatus
 
 from eval.gold_schema import GoldClaim
-
 
 _ENTRIES: list[GoldClaim] = []
 
