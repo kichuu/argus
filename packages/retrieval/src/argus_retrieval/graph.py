@@ -116,18 +116,99 @@ class GraphQuerier:
         except Exception as e:
             logger.warning("neighbors_query_failed", error=str(e), entity_id=eid)
             return []
+        return _agtype_rows_to_uuids(rows)
 
-        out: list[UUID] = []
+    async def traverse(
+        self,
+        start_entity_id: UUID,
+        end_entity_id: UUID,
+        max_hops: int = 3,
+        limit: int = 10,
+    ) -> list[list[UUID]]:
+        sid = str(start_entity_id)
+        oid = str(end_entity_id)
+        max_hops = max(1, int(max_hops))
+        limit = max(1, int(limit))
+        cypher = (
+            f"MATCH p = (a:Entity {{id: '{sid}'}})-[*1..{max_hops}]-(b:Entity {{id: '{oid}'}}) "
+            f"RETURN [n IN nodes(p) | n.id] AS path "
+            f"LIMIT {limit}"
+        )
+        try:
+            rows = await self._exec_cypher(cypher, return_cols="(path agtype)")
+        except Exception as e:
+            logger.warning("traverse_query_failed", error=str(e), start=sid, end=oid)
+            return []
+
+        paths: list[list[UUID]] = []
         for row in rows:
             raw = row[0]
             if raw is None:
                 continue
-            # agtype scalars come back as strings like '"<uuid>"' (quoted JSON).
-            s = str(raw).strip()
-            if s.startswith('"') and s.endswith('"'):
-                s = s[1:-1]
-            try:
-                out.append(UUID(s))
-            except (ValueError, AttributeError):
-                continue
-        return out
+            ids = _agtype_list_to_uuids(raw)
+            if ids:
+                paths.append(ids)
+        return paths
+
+    async def semantic_scan(
+        self, entity_ids: list[UUID], limit: int = 100
+    ) -> list[UUID]:
+        if not entity_ids:
+            return []
+        ids_literal = ", ".join(f"'{str(e)}'" for e in entity_ids)
+        limit = max(1, int(limit))
+        cypher = (
+            f"MATCH (a:Entity)-[]-(b:Entity) "
+            f"WHERE a.id IN [{ids_literal}] AND NOT b.id IN [{ids_literal}] "
+            f"RETURN DISTINCT b.id LIMIT {limit}"
+        )
+        try:
+            rows = await self._exec_cypher(cypher, return_cols="(id agtype)")
+        except Exception as e:
+            logger.warning(
+                "semantic_scan_failed",
+                error=str(e),
+                seed_count=len(entity_ids),
+            )
+            return []
+        return _agtype_rows_to_uuids(rows)
+
+
+def _agtype_to_str(raw: object) -> str:
+    s = str(raw).strip()
+    if s.startswith('"') and s.endswith('"'):
+        s = s[1:-1]
+    return s
+
+
+def _agtype_rows_to_uuids(rows: list[tuple]) -> list[UUID]:
+    out: list[UUID] = []
+    for row in rows:
+        raw = row[0]
+        if raw is None:
+            continue
+        try:
+            out.append(UUID(_agtype_to_str(raw)))
+        except (ValueError, AttributeError):
+            continue
+    return out
+
+
+def _agtype_list_to_uuids(raw: object) -> list[UUID]:
+    import json
+
+    s = str(raw).strip()
+    # AGE returns lists as JSON-encoded agtype, e.g. '["uuid1", "uuid2"]'.
+    try:
+        parsed = json.loads(s)
+    except (ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[UUID] = []
+    for item in parsed:
+        try:
+            out.append(UUID(str(item)))
+        except (ValueError, AttributeError):
+            continue
+    return out
