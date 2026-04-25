@@ -39,7 +39,7 @@ def _create_graph(psycopg, dsn: str, graph_name: str) -> None:
             msg = str(exc).lower()
             if "already exists" in msg or ("graph" in msg and "exists" in msg):
                 print(f"  graph '{graph_name}' already exists; skipping.")
-            elif "function create_graph" in msg or "create_graph" in msg and "does not exist" in msg:
+            elif "function create_graph" in msg or ("create_graph" in msg and "does not exist" in msg):
                 print(
                     f"  ERROR: AGE not loaded for this session ({exc}).\n"
                     f"  Run as superuser, then retry init_db:\n"

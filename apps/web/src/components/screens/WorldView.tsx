@@ -1,423 +1,470 @@
 "use client";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Bar } from "@/components/ui/Bar";
+
+import { useQuery } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
+import { useMemo, useState } from "react";
+// Leaflet's CSS is required globally; import once at module top.
+import "leaflet/dist/leaflet.css";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
 import { Dot } from "@/components/ui/Dot";
 import { KV } from "@/components/ui/KV";
-import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
-import { Segmented } from "@/components/ui/Segmented";
-import { ARGUS_DATA, type GeoEvent } from "@/mock/data";
-import { useDebateStore } from "@/store/debate";
+import { api, type Claim, type PlacePin } from "@/lib/api";
 
-const W = 1000;
-const H = 500;
+// Next.js needs the dynamic + ssr:false because Leaflet touches `window` at import time.
+const MapContainer = dynamic(
+  () => import("react-leaflet").then((m) => m.MapContainer),
+  { ssr: false },
+);
+const TileLayer = dynamic(
+  () => import("react-leaflet").then((m) => m.TileLayer),
+  { ssr: false },
+);
+const CircleMarker = dynamic(
+  () => import("react-leaflet").then((m) => m.CircleMarker),
+  { ssr: false },
+);
+const Tooltip = dynamic(
+  () => import("react-leaflet").then((m) => m.Tooltip),
+  { ssr: false },
+);
 
-const project = (lat: number, lon: number) => ({
-  x: ((lon + 180) / 360) * W,
-  y: ((90 - lat) / 180) * H,
-});
+const TILE_URL =
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const TILE_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>, &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
+// Leaflet writes `stroke`/`fill` directly as SVG attributes which don't
+// resolve CSS custom properties — match var(--amber) at the literal hex.
+const PIN_COLOR = "#f5a524";
+
+function pinRadius(claimCount: number): number {
+  return Math.max(4, Math.min(20, 4 + Math.log2(claimCount + 1) * 2));
+}
+
+const STATUS_TONE: Record<Claim["status"], "amber" | "green" | "red" | "default"> = {
+  likely_true: "green",
+  contested: "amber",
+  unverified: "default",
+  likely_false: "red",
+};
+
+function statusLabel(s: Claim["status"]): string {
+  switch (s) {
+    case "likely_true":
+      return "TRUE";
+    case "contested":
+      return "CONTESTED";
+    case "unverified":
+      return "UNVERIFIED";
+    case "likely_false":
+      return "FALSE";
+  }
+}
 
 export function WorldView() {
-  const router = useRouter();
-  const setTopic = useDebateStore((s) => s.setTopic);
-  const D = ARGUS_DATA;
-  const [layer, setLayer] = useState<"events" | "heat" | "flow">("events");
-  const [time, setTime] = useState<"24h" | "7d" | "30d">("24h");
-  const [topic, setTopic2] = useState<string>("all");
-  const [hover, setHover] = useState<GeoEvent | null>(null);
-  const [sel, setSel] = useState<GeoEvent | null>(D.EVENTS[0]);
+  const [selectedPin, setSelectedPin] = useState<PlacePin | null>(null);
 
-  const filtered = topic === "all" ? D.EVENTS : D.EVENTS.filter((e) => e.topic === topic);
+  const places = useQuery<PlacePin[]>({
+    queryKey: ["world", "places"],
+    queryFn: () => api.worldPlaces({ limit: 500 }),
+    staleTime: 60_000,
+    retry: 0,
+  });
+
+  // No `affected_entities` filter on /claims; fetch a wide page and filter
+  // client-side by the selected pin's entity_id.
+  const claims = useQuery<Claim[]>({
+    queryKey: ["world", "claims-pool"],
+    queryFn: () => api.claims({ limit: 100 }),
+    staleTime: 60_000,
+    retry: 0,
+    enabled: !!selectedPin,
+  });
+
+  const list = places.data ?? [];
+
+  const claimsForPin = useMemo<Claim[]>(() => {
+    if (!selectedPin || !claims.data) return [];
+    return claims.data.filter((c) =>
+      c.affected_entities.includes(selectedPin.entity_id),
+    );
+  }, [selectedPin, claims.data]);
+
+  const breadcrumb = places.isError
+    ? "// api offline"
+    : places.isLoading
+      ? "// loading places…"
+      : `// ${list.length} places · click pin for claims`;
 
   return (
-    <div className="col grow" style={{ overflow: "hidden" }}>
-      <ScreenHeader
-        code="02·WORLD"
-        title="WorldView"
-        breadcrumb="// 24h · all topics · 24 events"
-        right={
-          <div className="row gap-2">
-            <Segmented
-              options={[
-                { value: "events", label: "Events" },
-                { value: "heat", label: "Heat" },
-                { value: "flow", label: "Flow" },
-              ]}
-              value={layer}
-              onChange={setLayer}
-            />
-            <Segmented
-              options={["24h", "7d", "30d"] as const}
-              value={time}
-              onChange={setTime}
-            />
-            <Btn ghost>◐ 3D / 2D</Btn>
-            <Btn ghost>↗ SHARE</Btn>
-          </div>
-        }
-      />
-
-      <div className="row grow" style={{ overflow: "hidden" }}>
-        <div
-          className="grow col grid-bg"
-          style={{ position: "relative", overflow: "hidden", background: "var(--bg-1)" }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: 12,
-              left: 12,
-              zIndex: 10,
-              display: "flex",
-              gap: 6,
-              flexWrap: "wrap",
-            }}
-          >
-            {["all", "TW Strait", "Markets", "Defense", "Diplomatic", "Supply Chain", "SCS"].map(
-              (t) => (
+    <div className="col grow" style={{ overflow: "hidden", position: "relative" }}>
+      {/* Header overlay (top-left, above map) */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 500,
+          pointerEvents: "none",
+        }}
+      >
+        <div style={{ pointerEvents: "auto" }}>
+          <ScreenHeader
+            code="02·WORLD"
+            title="WorldView"
+            breadcrumb={breadcrumb}
+            right={
+              <div className="row gap-2">
                 <span
-                  key={t}
-                  onClick={() => setTopic2(t)}
-                  className={topic === t ? "chip chip-amber" : "chip"}
-                  style={{ cursor: "pointer" }}
+                  className="tt-up"
+                  style={{ fontSize: 9, color: "var(--ink-3)" }}
                 >
-                  {t}
+                  WGS84 · OSM/CARTO
                 </span>
-              ),
-            )}
-          </div>
+              </div>
+            }
+          />
+        </div>
+      </div>
 
-          <svg
-            viewBox={`0 0 ${W} ${H}`}
-            style={{ width: "100%", height: "100%", display: "block" }}
-            preserveAspectRatio="xMidYMid meet"
-          >
-            {Array.from({ length: 13 }).map((_, i) => (
-              <line
-                key={"g" + i}
-                x1={i * (W / 12)}
-                y1={0}
-                x2={i * (W / 12)}
-                y2={H}
-                stroke="var(--line-1)"
-                strokeWidth="0.5"
-              />
-            ))}
-            {Array.from({ length: 7 }).map((_, i) => (
-              <line
-                key={"h" + i}
-                x1={0}
-                y1={i * (H / 6)}
-                x2={W}
-                y2={i * (H / 6)}
-                stroke="var(--line-1)"
-                strokeWidth="0.5"
-              />
-            ))}
-            <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="var(--line-2)" strokeWidth="1" strokeDasharray="4 4" />
+      {/* Map fills the remaining space */}
+      <div
+        className="grow"
+        style={{
+          position: "relative",
+          background: "var(--bg-0)",
+          overflow: "hidden",
+        }}
+      >
+        <MapContainer
+          center={[20, 0]}
+          zoom={2}
+          minZoom={2}
+          maxZoom={8}
+          worldCopyJump
+          scrollWheelZoom
+          style={{
+            width: "100%",
+            height: "100%",
+            background: "var(--bg-0)",
+          }}
+          attributionControl
+        >
+          <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+          {list.map((pin) => (
+            <CircleMarker
+              key={pin.entity_id}
+              center={[pin.lat, pin.lon]}
+              radius={pinRadius(pin.claim_count)}
+              pathOptions={{
+                color: PIN_COLOR,
+                fillColor: PIN_COLOR,
+                fillOpacity: 0.6,
+                opacity: 0.9,
+                weight: 1,
+              }}
+              eventHandlers={{ click: () => setSelectedPin(pin) }}
+            >
+              <Tooltip
+                direction="top"
+                offset={[0, -4]}
+                opacity={1}
+                className="argus-tooltip"
+              >
+                {pin.name} · {pin.claim_count} claims
+              </Tooltip>
+            </CircleMarker>
+          ))}
+        </MapContainer>
 
-            <g fill="var(--bg-3)" stroke="var(--line-2)" strokeWidth="0.6">
-              <path d="M 100,140 L 180,110 L 240,130 L 280,180 L 250,240 L 220,260 L 180,280 L 140,260 L 110,200 Z" />
-              <path d="M 240,300 L 280,290 L 300,340 L 295,400 L 270,440 L 250,420 L 240,360 Z" />
-              <path d="M 470,140 L 520,130 L 540,160 L 530,190 L 490,200 L 470,180 Z" />
-              <path d="M 480,220 L 540,210 L 570,260 L 580,330 L 540,380 L 510,380 L 490,320 L 480,260 Z" />
-              <path d="M 540,130 L 720,120 L 800,160 L 820,200 L 790,240 L 720,260 L 660,250 L 600,230 L 560,200 L 540,170 Z" />
-              <path d="M 720,260 L 800,270 L 820,300 L 780,310 L 740,300 Z" />
-              <path d="M 790,330 L 870,330 L 880,370 L 830,390 L 790,370 Z" />
-              <path d="M 380,80 L 430,70 L 440,110 L 410,130 L 380,110 Z" />
-              <path d="M 0,470 L 1000,470 L 1000,500 L 0,500 Z" />
-              <path d="M 800,200 L 820,195 L 825,220 L 810,225 Z" />
-              <path d="M 460,150 L 470,148 L 472,168 L 462,170 Z" />
-            </g>
-
-            {layer === "heat" &&
-              filtered.map((e) => {
-                const p = project(e.lat, e.lon);
-                return (
-                  <circle
-                    key={"hh" + e.id}
-                    cx={p.x}
-                    cy={p.y}
-                    r={e.severity * 60}
-                    fill="var(--amber)"
-                    opacity={e.severity * 0.18}
-                  />
-                );
-              })}
-
-            {layer === "flow" &&
-              (() => {
-                const tw = D.EVENTS.find((e) => e.id === "e1");
-                if (!tw) return null;
-                const tp = project(tw.lat, tw.lon);
-                return D.EVENTS.filter((e) => e.id !== "e1" && e.severity > 0.5).map((e) => {
-                  const ep = project(e.lat, e.lon);
-                  const mx = (tp.x + ep.x) / 2;
-                  const my = Math.min(tp.y, ep.y) - 60;
-                  return (
-                    <path
-                      key={"arc" + e.id}
-                      d={`M ${tp.x} ${tp.y} Q ${mx} ${my} ${ep.x} ${ep.y}`}
-                      stroke="var(--amber)"
-                      strokeWidth="1"
-                      fill="none"
-                      strokeDasharray="3 3"
-                      opacity="0.5"
-                    />
-                  );
-                });
-              })()}
-
-            {filtered.map((e) => {
-              const p = project(e.lat, e.lon);
-              const isSel = sel?.id === e.id;
-              const isHover = hover?.id === e.id;
-              const r = 3 + e.severity * 6;
-              const color =
-                e.severity > 0.75
-                  ? "var(--red)"
-                  : e.severity > 0.5
-                    ? "var(--amber)"
-                    : "var(--ink-1)";
-              return (
-                <g
-                  key={e.id}
-                  style={{ cursor: "pointer" }}
-                  onClick={() => setSel(e)}
-                  onMouseEnter={() => setHover(e)}
-                  onMouseLeave={() => setHover(null)}
-                >
-                  {(isSel || isHover) && (
-                    <circle cx={p.x} cy={p.y} r={r * 2.5} fill={color} opacity="0.18" />
-                  )}
-                  <circle cx={p.x} cy={p.y} r={r} fill={color} opacity="0.9" />
-                  <circle
-                    cx={p.x}
-                    cy={p.y}
-                    r={r + 2}
-                    fill="none"
-                    stroke={color}
-                    strokeWidth="0.6"
-                    opacity="0.6"
-                  >
-                    <animate attributeName="r" from={r} to={r + 8} dur="2s" repeatCount="indefinite" />
-                    <animate
-                      attributeName="opacity"
-                      from="0.6"
-                      to="0"
-                      dur="2s"
-                      repeatCount="indefinite"
-                    />
-                  </circle>
-                  {(isSel || isHover) && (
-                    <g>
-                      <line
-                        x1={p.x}
-                        y1={p.y}
-                        x2={p.x + 14}
-                        y2={p.y - 14}
-                        stroke={color}
-                        strokeWidth="0.8"
-                      />
-                      <text
-                        x={p.x + 16}
-                        y={p.y - 14}
-                        fill="var(--ink-0)"
-                        fontSize="9"
-                        fontFamily="JetBrains Mono"
-                      >
-                        {e.label}
-                      </text>
-                      <text
-                        x={p.x + 16}
-                        y={p.y - 4}
-                        fill="var(--ink-3)"
-                        fontSize="8"
-                        fontFamily="JetBrains Mono"
-                      >
-                        {e.country} · {e.topic}
-                      </text>
-                    </g>
-                  )}
-                </g>
-              );
-            })}
-
-            <text x={10} y={18} fontFamily="JetBrains Mono" fontSize="9" fill="var(--ink-3)">
-              EQUIRECTANGULAR · WGS84 · ZOOM 1.0
-            </text>
-          </svg>
-
+        {/* Empty state overlay */}
+        {!places.isLoading && !places.isError && list.length === 0 && (
           <div
             style={{
               position: "absolute",
-              bottom: 12,
-              left: 12,
+              inset: 0,
               display: "flex",
-              gap: 12,
               alignItems: "center",
-              background: "var(--bg-2)",
-              padding: "6px 10px",
-              border: "1px solid var(--line-2)",
+              justifyContent: "center",
+              pointerEvents: "none",
+              zIndex: 400,
             }}
           >
-            <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-2)" }}>
-              Severity
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Dot tone="red" /> <span style={{ fontSize: 10 }}>≥75</span>
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Dot tone="amber" /> <span style={{ fontSize: 10 }}>50–74</span>
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-              <Dot tone="ink" /> <span style={{ fontSize: 10 }}>&lt;50</span>
-            </span>
-          </div>
-        </div>
-
-        <div
-          className="col"
-          style={{
-            width: 320,
-            borderLeft: "1px solid var(--line-2)",
-            background: "var(--bg-1)",
-            overflowY: "auto",
-          }}
-        >
-          {sel && (
-            <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
-              <div className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                SELECTED · {sel.country} · {sel.id.toUpperCase()}
+            <div
+              style={{
+                background: "var(--bg-1)",
+                border: "1px solid var(--line-2)",
+                padding: "16px 22px",
+                maxWidth: 480,
+                pointerEvents: "auto",
+              }}
+            >
+              <div
+                className="tt-up"
+                style={{ fontSize: 9, color: "var(--ink-3)", marginBottom: 6 }}
+              >
+                NO DATA
               </div>
               <div
                 style={{
-                  fontSize: 14,
+                  fontSize: 12,
                   color: "var(--ink-0)",
-                  marginTop: 4,
-                  fontWeight: 500,
-                  lineHeight: 1.3,
+                  lineHeight: 1.5,
                 }}
               >
-                {sel.label}
-              </div>
-              <div className="row gap-2" style={{ marginTop: 8 }}>
-                <Chip tone="amber">{sel.topic}</Chip>
-                <Chip>SEV {(sel.severity * 100).toFixed(0)}</Chip>
-              </div>
-              <div style={{ marginTop: 10 }}>
-                <KV k="Lat / Lon" v={`${sel.lat.toFixed(2)}° / ${sel.lon.toFixed(2)}°`} />
-                <KV k="First seen" v="−42m" />
-                <KV k="Sources" v="14" />
-                <KV k="Goldstein tone" v="−7.2" vColor="var(--red)" />
-              </div>
-              <div className="col gap-2" style={{ marginTop: 12 }}>
-                <Btn
-                  primary
-                  onClick={() => {
-                    setTopic(`What happens next at ${sel.label}?`);
-                    router.push("/ops");
-                  }}
-                >
-                  ▸ DEBATE THIS PIN
-                </Btn>
-                <div className="row gap-2">
-                  <Btn ghost>+ BOOKMARK</Btn>
-                  <Btn ghost>↗ KG</Btn>
-                </div>
+                No geocoded places yet — run{" "}
+                <span className="tab" style={{ color: "var(--amber)" }}>
+                  uv run python scripts/geocode_entities.py
+                </span>{" "}
+                to backfill coordinates from Wikidata.
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          <Panel
-            id="H"
-            title="Hotspots"
-            sub="ranked · 24h"
-            style={{ flex: 1, border: "none", borderTop: "1px solid var(--line-2)" }}
-          >
-            <div className="col">
-              {D.HOTSPOTS.map((h) => (
-                <div
-                  key={h.rank}
-                  style={{
-                    padding: "8px 12px",
-                    borderBottom: "1px solid var(--line-1)",
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                  }}
-                >
-                  <span
-                    className="tab amber"
-                    style={{ fontSize: 11, minWidth: 16 }}
-                  >
-                    {String(h.rank).padStart(2, "0")}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, color: "var(--ink-0)" }}>{h.label}</div>
-                    <div style={{ fontSize: 10, color: "var(--ink-2)" }}>
-                      {h.events24h.toLocaleString()} events
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div
-                      className="tab"
-                      style={{
-                        fontSize: 10,
-                        color: h.delta.startsWith("+") ? "var(--green)" : "var(--red)",
-                      }}
-                    >
-                      {h.delta}
-                    </div>
-                    <Bar value={h.severity} width={50} color="var(--amber)" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Panel>
+        {/* Map legend (bottom-left) */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 12,
+            left: 12,
+            zIndex: 500,
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            background: "var(--bg-2)",
+            padding: "6px 10px",
+            border: "1px solid var(--line-2)",
+            fontFamily: "JetBrains Mono, monospace",
+          }}
+        >
+          <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-2)" }}>
+            CLAIMS
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <Dot tone="amber" size={4} /> <span style={{ fontSize: 10 }}>1</span>
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <Dot tone="amber" size={8} /> <span style={{ fontSize: 10 }}>10</span>
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <Dot tone="amber" size={12} /> <span style={{ fontSize: 10 }}>100+</span>
+          </span>
         </div>
       </div>
 
-      <div
-        style={{
-          height: 36,
-          borderTop: "1px solid var(--line-2)",
-          background: "var(--bg-1)",
-          display: "flex",
-          alignItems: "center",
-          padding: "0 12px",
-          gap: 12,
-          flexShrink: 0,
-        }}
-      >
-        <Btn ghost>◀</Btn>
-        <Btn ghost>▶</Btn>
-        <span className="muted tt-up" style={{ fontSize: 9 }}>
-          −24h
-        </span>
-        <div style={{ flex: 1, position: "relative", height: 4, background: "var(--bg-3)" }}>
-          <div style={{ width: "73%", height: "100%", background: "var(--amber)" }} />
+      {/* Side panel slides in from right when pin selected */}
+      {selectedPin && (
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 0,
+            bottom: 0,
+            width: 400,
+            background: "var(--bg-1)",
+            borderLeft: "1px solid var(--line-2)",
+            zIndex: 600,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            boxShadow: "-8px 0 24px rgba(0,0,0,0.4)",
+          }}
+        >
+          {/* Header */}
           <div
             style={{
-              position: "absolute",
-              left: "73%",
-              top: -4,
-              width: 2,
-              height: 12,
-              background: "var(--ink-0)",
+              padding: 14,
+              borderBottom: "1px solid var(--line-2)",
+              flexShrink: 0,
             }}
-          />
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 8,
+              }}
+            >
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div
+                  className="tt-up"
+                  style={{ fontSize: 9, color: "var(--ink-3)" }}
+                >
+                  PLACE · {selectedPin.entity_id.slice(0, 8).toUpperCase()}
+                </div>
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "var(--ink-0)",
+                    marginTop: 4,
+                    fontWeight: 500,
+                    lineHeight: 1.3,
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {selectedPin.name}
+                </div>
+              </div>
+              <Btn ghost onClick={() => setSelectedPin(null)}>
+                ✕
+              </Btn>
+            </div>
+            <div className="row gap-2" style={{ marginTop: 8 }}>
+              <Chip tone="amber">{selectedPin.claim_count} claims</Chip>
+              {selectedPin.wikidata_id && (
+                <a
+                  href={`https://www.wikidata.org/wiki/${selectedPin.wikidata_id}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="chip"
+                  style={{ textDecoration: "none" }}
+                >
+                  ↗ {selectedPin.wikidata_id}
+                </a>
+              )}
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <KV
+                k="Lat / Lon"
+                v={`${selectedPin.lat.toFixed(3)}° / ${selectedPin.lon.toFixed(3)}°`}
+              />
+              <KV k="Entity ID" v={selectedPin.entity_id.slice(0, 12) + "…"} />
+            </div>
+          </div>
+
+          {/* Claims list */}
+          <div
+            className="col grow"
+            style={{ overflowY: "auto", minHeight: 0 }}
+          >
+            <div
+              style={{
+                padding: "10px 14px",
+                borderBottom: "1px solid var(--line-1)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                background: "var(--bg-2)",
+                position: "sticky",
+                top: 0,
+                zIndex: 1,
+              }}
+            >
+              <span
+                className="tt-up"
+                style={{ fontSize: 9, color: "var(--ink-2)" }}
+              >
+                CLAIMS MENTIONING THIS PLACE
+              </span>
+              <span
+                className="tab"
+                style={{ fontSize: 10, color: "var(--ink-3)" }}
+              >
+                {claims.isLoading ? "…" : claimsForPin.length}
+              </span>
+            </div>
+
+            {claims.isLoading && (
+              <div
+                style={{
+                  padding: 14,
+                  fontSize: 11,
+                  color: "var(--ink-2)",
+                }}
+              >
+                Loading claims…
+              </div>
+            )}
+
+            {claims.isError && (
+              <div
+                style={{
+                  padding: 14,
+                  fontSize: 11,
+                  color: "var(--red)",
+                }}
+              >
+                Failed to load claims (api offline)
+              </div>
+            )}
+
+            {!claims.isLoading &&
+              !claims.isError &&
+              claimsForPin.length === 0 && (
+                <div
+                  style={{
+                    padding: 14,
+                    fontSize: 11,
+                    color: "var(--ink-2)",
+                  }}
+                >
+                  No claims in current pool reference this place.
+                </div>
+              )}
+
+            {claimsForPin.map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  padding: "10px 14px",
+                  borderBottom: "1px solid var(--line-1)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    alignItems: "center",
+                    marginBottom: 6,
+                  }}
+                >
+                  <Chip tone={STATUS_TONE[c.status]}>
+                    {statusLabel(c.status)}
+                  </Chip>
+                  <span
+                    className="tab"
+                    style={{ fontSize: 10, color: "var(--ink-3)" }}
+                  >
+                    conf {(c.confidence * 100).toFixed(0)}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--ink-0)",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {c.statement}
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    display: "flex",
+                    gap: 10,
+                    fontSize: 10,
+                    color: "var(--ink-2)",
+                  }}
+                >
+                  <span>
+                    + {c.supporting_evidence.length} support
+                  </span>
+                  <span>− {c.contradicting_evidence.length} contra</span>
+                  <span>
+                    {c.agent_consensus.agree}/{c.agent_consensus.disagree}/
+                    {c.agent_consensus.uncertain}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <span className="muted tt-up" style={{ fontSize: 9 }}>
-          NOW
-        </span>
-        <span className="tab amber" style={{ fontSize: 10 }}>
-          14:22:08Z
-        </span>
-      </div>
+      )}
     </div>
   );
 }

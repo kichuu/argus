@@ -26,6 +26,8 @@ dev = [
     "ipython>=8.30",
     "httpx>=0.28",
     "respx>=0.21",
+    "psycopg[binary]>=3.2",
+    "qdrant-client>=1.13",
 ]
 
 [tool.ruff]

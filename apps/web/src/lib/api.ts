@@ -96,6 +96,7 @@ export type DiscussionStatus =
   | "planning"
   | "researching"
   | "debating"
+  | "criticizing"
   | "synthesizing"
   | "completed"
   | "failed";
@@ -122,6 +123,23 @@ export type DiscussionRun = {
   messages_count: number;
   final_claim_ids: string[];
   error: string | null;
+};
+
+export type DiscussionListItem = {
+  id: string;
+  topic: string;
+  vertical: string;
+  status: DiscussionStatus;
+  started_at: string;
+  completed_at: string | null;
+  final_claim_count: number;
+};
+
+export type DiscussionListResponse = {
+  items: DiscussionListItem[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type CreateDiscussionResponse = {
@@ -184,8 +202,8 @@ export const api = {
   source: (id: string, opts: { include_text?: boolean } = {}) =>
     request<Source>(`/sources/${id}${qs({ ...opts })}`),
 
-  discussions: (opts: ListOpts = {}) =>
-    request<DiscussionRun[]>(`/discussions${qs({ ...opts })}`),
+  discussions: (opts: ListOpts & { status?: DiscussionStatus; vertical?: string } = {}) =>
+    request<DiscussionListResponse>(`/discussions${qs({ ...opts })}`),
   discussion: (id: string) => request<DiscussionRun>(`/discussions/${id}`),
   discussionMessages: (id: string, opts: ListOpts = {}) =>
     request<AgentMessage[]>(`/discussions/${id}/messages${qs({ ...opts })}`),
@@ -194,4 +212,45 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+
+  // === world ===
+  worldPlaces: (opts: { limit?: number; min_claim_count?: number } = {}) =>
+    request<PlacePin[]>(`/world/places${qs({ ...opts })}`),
+
+  // === settings ===
+  settings: (): Promise<SettingsResponse> => request<SettingsResponse>("/settings"),
+};
+
+// === world ===
+export type PlacePin = {
+  entity_id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  wikidata_id: string | null;
+  claim_count: number;
+};
+
+// === settings ===
+export type ModelConfig = {
+  role: string;
+  model: string;
+  family: string;
+};
+
+export type SettingsResponse = {
+  app_env: string;
+  log_level: string;
+  vertical: string;
+  embedding_provider: string;
+  embedding_model: string;
+  openai_embedding_model: string;
+  openai_embedding_dimensions: number;
+  reranker_model: string;
+  models: ModelConfig[];
+  trust_tier_count: number;
+  persona_library_count: Record<string, number>;
+  qdrant_collection: string;
+  temporal: { host: string; namespace: string; task_queue: string };
+  raw_store_backend: string;
 };
