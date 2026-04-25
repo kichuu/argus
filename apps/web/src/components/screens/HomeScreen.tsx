@@ -301,7 +301,7 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
                   {D.RECENT.map((d) => (
                     <tr
                       key={d.id}
-                      onClick={() => router.push(d.status === "running" ? "/debate" : "/library")}
+                      onClick={() => router.push(`/debate?id=${d.id}`)}
                       style={{ cursor: "pointer" }}
                     >
                       <td>
