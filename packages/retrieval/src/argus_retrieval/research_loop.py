@@ -1,9 +1,11 @@
-"""Research-time retrieval loop with web-search fallback.
+"""Research-time retrieval loop with multi-source web augmentation.
 
-The :class:`ResearchLoop` queries the local Qdrant index first.  If the
-index is sparse (fewer than ``min_local_hits`` results), it falls back to
-OpenAI's hosted ``web_search`` tool.  Every URL surfaced by web_search is
-funnelled through the standard ingestion pipeline (normalize -> hash ->
+The :class:`ResearchLoop` queries the local Qdrant index first, then —
+depending on ``mode`` — either supplements (``"augment"``, default) or
+falls back (``"fallback"``) to a configurable mix of open web sources:
+OpenAI's hosted ``web_search``, Hacker News (Algolia), and Reddit's
+public ``.json`` search. Every URL surfaced by any source is funnelled
+through the standard ingestion pipeline (normalize -> hash ->
 content-hash dedup -> persist :class:`SourceModel` -> embed -> Qdrant
 upsert) before any of its spans become retrievable.
 
@@ -13,8 +15,10 @@ at a verifiable :class:`Source` row whose ``content_hash`` we recorded.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -30,10 +34,12 @@ from bs4 import BeautifulSoup
 from sqlalchemy import select
 
 from argus_retrieval.embeddings import Embedder
+from argus_retrieval.hn_search import HNSearchTool
 from argus_retrieval.hybrid import HybridRetriever
+from argus_retrieval.reddit_search import RedditSearchTool
 from argus_retrieval.types import RetrievedSpan
 from argus_retrieval.vector import VectorIndex
-from argus_retrieval.web_search import OpenAISearchTool
+from argus_retrieval.web_search import OpenAISearchTool, WebSearchHit
 
 logger = get_logger(__name__)
 
@@ -42,16 +48,26 @@ _INDEXED_SPAN_CHARS = 500
 
 
 class ResearchLoop:
-    """Hybrid local-first / web-fallback retrieval with provenance.
+    """Hybrid local-first retrieval with optional multi-source web augment.
 
-    Steps:
+    Steps (``mode="augment"``, default):
       1. Query local Qdrant via :class:`HybridRetriever`.
-      2. If hits < ``min_local_hits``, call ``web_search`` to find URLs.
-      3. For each URL: fetch via httpx, normalize, hash, dedup, persist
-         :class:`SourceModel`, embed, upload to Qdrant. Skip already-indexed
-         (by content_hash).
-      4. Re-query Qdrant.
-      5. Return :class:`RetrievedSpan` tuples (provenance intact).
+      2. In parallel, call every configured web tool (OpenAI web_search,
+         HN Algolia, Reddit). Each returns up to ``web_results_per_source``
+         hits.
+      3. Dedup hits by URL across sources, then funnel each URL through
+         :meth:`_ingest_url` (fetch, normalize, hash, dedup, persist
+         :class:`SourceModel`, embed, upsert to Qdrant).
+      4. If anything ingested, re-query local; else return the original
+         local hits.
+
+    Steps (``mode="fallback"``, legacy):
+      1. Query local.
+      2. If ``len(local_hits) < min_local_hits`` AND OpenAI web_search is
+         configured, call it; ingest its hits; re-query.
+
+    Either way, provenance is preserved: every span the loop returns
+    points at a :class:`Source` row whose ``content_hash`` we recorded.
     """
 
     def __init__(
@@ -60,15 +76,23 @@ class ResearchLoop:
         embedder: Embedder,
         vector_index: VectorIndex,
         web_search: OpenAISearchTool | None = None,
+        hn_search: HNSearchTool | None = None,
+        reddit_search: RedditSearchTool | None = None,
         min_local_hits: int = 5,
         web_fetch_timeout: float = 15.0,
+        mode: Literal["fallback", "augment"] = "augment",
+        web_results_per_source: int = 4,
     ) -> None:
         self._local = local_retriever
         self._embedder = embedder
         self._vector = vector_index
         self._web = web_search
+        self._hn = hn_search
+        self._reddit = reddit_search
         self._min_local_hits = min_local_hits
         self._timeout = web_fetch_timeout
+        self._mode = mode
+        self._per_source = web_results_per_source
         self._trust = load_trust_config()
         self._user_agent = get_settings().wikidata_user_agent
 
@@ -81,6 +105,23 @@ class ResearchLoop:
         local_hits = await self._local.retrieve(
             topic, mentioned_entities=tuple(mentioned_entities), top_k=top_k
         )
+
+        if self._mode == "fallback":
+            return await self._run_fallback(
+                topic, local_hits, mentioned_entities=mentioned_entities, top_k=top_k
+            )
+        return await self._run_augment(
+            topic, local_hits, mentioned_entities=mentioned_entities, top_k=top_k
+        )
+
+    async def _run_fallback(
+        self,
+        topic: str,
+        local_hits: list[RetrievedSpan],
+        *,
+        mentioned_entities: Sequence[UUID],
+        top_k: int,
+    ) -> list[RetrievedSpan]:
         if len(local_hits) >= self._min_local_hits or self._web is None:
             return local_hits
 
@@ -108,6 +149,83 @@ class ResearchLoop:
             web_hits=len(web_hits),
             ingested=ingested,
         )
+
+        if ingested == 0:
+            return local_hits
+
+        return await self._local.retrieve(
+            topic, mentioned_entities=tuple(mentioned_entities), top_k=top_k
+        )
+
+    async def _run_augment(
+        self,
+        topic: str,
+        local_hits: list[RetrievedSpan],
+        *,
+        mentioned_entities: Sequence[UUID],
+        top_k: int,
+    ) -> list[RetrievedSpan]:
+        sources: list[tuple[str, OpenAISearchTool | HNSearchTool | RedditSearchTool]] = []
+        if self._web is not None:
+            sources.append(("openai", self._web))
+        if self._hn is not None:
+            sources.append(("hn", self._hn))
+        if self._reddit is not None:
+            sources.append(("reddit", self._reddit))
+
+        if not sources:
+            return local_hits
+
+        results = await asyncio.gather(
+            *(tool.search(topic, max_results=self._per_source) for _, tool in sources),
+            return_exceptions=True,
+        )
+
+        per_source_hits: dict[str, list[WebSearchHit]] = {}
+        for (name, _), res in zip(sources, results, strict=True):
+            if isinstance(res, BaseException):
+                logger.warning(
+                    "research_loop_source_failed", source=name, error=str(res)
+                )
+                per_source_hits[name] = []
+                continue
+            per_source_hits[name] = list(res)
+
+        # URL-dedup across sources before _ingest_url. Order: openai, hn, reddit.
+        seen_urls: set[str] = set()
+        ingested_by_source: dict[str, int] = {name: 0 for name, _ in sources}
+        web_total = 0
+        for name, _ in sources:
+            for hit in per_source_hits.get(name, []):
+                if not hit.url or hit.url in seen_urls:
+                    continue
+                seen_urls.add(hit.url)
+                web_total += 1
+                try:
+                    src = await self._ingest_url(hit.url, hint_title=hit.title)
+                except Exception as e:
+                    logger.warning(
+                        "ingest_url_unhandled_error",
+                        url=hit.url,
+                        source=name,
+                        error=str(e),
+                    )
+                    continue
+                if src is not None:
+                    ingested_by_source[name] += 1
+
+        ingested = sum(ingested_by_source.values())
+        logger.info(
+            "research_loop_augmented",
+            topic=topic[:200],
+            local=len(local_hits),
+            web_total=web_total,
+            ingested=ingested,
+            by_source=ingested_by_source,
+        )
+
+        if ingested == 0:
+            return local_hits
 
         return await self._local.retrieve(
             topic, mentioned_entities=tuple(mentioned_entities), top_k=top_k

@@ -8,6 +8,18 @@ from argus_retrieval.types import RetrievedSpan
 from argus_retrieval.web_search import WebSearchHit
 
 
+def _hn_tool(hits: list[WebSearchHit]) -> MagicMock:
+    t = MagicMock()
+    t.search = AsyncMock(return_value=hits)
+    return t
+
+
+def _reddit_tool(hits: list[WebSearchHit]) -> MagicMock:
+    t = MagicMock()
+    t.search = AsyncMock(return_value=hits)
+    return t
+
+
 def _make_span(score: float = 0.5) -> RetrievedSpan:
     return RetrievedSpan(
         verbatim_span="hello world",
@@ -57,6 +69,7 @@ async def test_retrieve_returns_local_when_min_hits_met() -> None:
         vector_index=_vector_index(),
         web_search=web,
         min_local_hits=5,
+        mode="fallback",
     )
 
     out = await loop.retrieve("topic", top_k=10)
@@ -84,8 +97,11 @@ async def test_retrieve_falls_back_to_web_when_below_min(mocker) -> None:
         vector_index=_vector_index(),
         web_search=web,
         min_local_hits=5,
+        mode="fallback",
     )
-    ingest = mocker.patch.object(loop, "_ingest_url", new=AsyncMock(return_value=None))
+    ingest = mocker.patch.object(
+        loop, "_ingest_url", new=AsyncMock(return_value=MagicMock())
+    )
 
     out = await loop.retrieve("novel topic", top_k=10)
 
@@ -106,12 +122,194 @@ async def test_retrieve_skips_web_when_no_search_tool() -> None:
         vector_index=_vector_index(),
         web_search=None,
         min_local_hits=5,
+        mode="fallback",
     )
 
     out = await loop.retrieve("topic")
 
     assert out == cold
     local.retrieve.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_augment_calls_all_three_sources_even_when_local_full(mocker) -> None:
+    spans = [_make_span() for _ in range(10)]
+    warm = [_make_span() for _ in range(12)]
+    local = _local_retriever([spans, warm])
+    web = _web_search(
+        [WebSearchHit(url="https://reuters.com/a", title="A", snippet="")]
+    )
+    hn = _hn_tool(
+        [WebSearchHit(url="https://news.ycombinator.com/x", title="HN X", snippet="")]
+    )
+    reddit = _reddit_tool(
+        [WebSearchHit(url="https://example.com/r", title="R", snippet="")]
+    )
+
+    loop = ResearchLoop(
+        local_retriever=local,
+        embedder=_embedder(),
+        vector_index=_vector_index(),
+        web_search=web,
+        hn_search=hn,
+        reddit_search=reddit,
+        min_local_hits=5,
+        mode="augment",
+    )
+    ingest = mocker.patch.object(
+        loop, "_ingest_url", new=AsyncMock(return_value=MagicMock())
+    )
+
+    out = await loop.retrieve("topic", top_k=10)
+
+    assert out == warm
+    web.search.assert_awaited_once()
+    hn.search.assert_awaited_once()
+    reddit.search.assert_awaited_once()
+    assert ingest.await_count == 3
+    assert local.retrieve.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_augment_dedupes_urls_across_sources(mocker) -> None:
+    spans = [_make_span() for _ in range(3)]
+    warm = [_make_span() for _ in range(4)]
+    local = _local_retriever([spans, warm])
+    shared = "https://shared.example.com/post"
+    web = _web_search([WebSearchHit(url=shared, title="OAI", snippet="")])
+    hn = _hn_tool([WebSearchHit(url=shared, title="HN", snippet="")])
+    reddit = _reddit_tool(
+        [WebSearchHit(url="https://other.example.com/x", title="R", snippet="")]
+    )
+
+    loop = ResearchLoop(
+        local_retriever=local,
+        embedder=_embedder(),
+        vector_index=_vector_index(),
+        web_search=web,
+        hn_search=hn,
+        reddit_search=reddit,
+        mode="augment",
+    )
+    ingest = mocker.patch.object(
+        loop, "_ingest_url", new=AsyncMock(return_value=MagicMock())
+    )
+
+    await loop.retrieve("topic", top_k=10)
+
+    # shared URL ingested only once, plus the unique reddit URL
+    assert ingest.await_count == 2
+    ingested_urls = {call.args[0] for call in ingest.call_args_list}
+    assert ingested_urls == {shared, "https://other.example.com/x"}
+
+
+@pytest.mark.asyncio
+async def test_augment_tolerates_none_tools(mocker) -> None:
+    spans = [_make_span() for _ in range(3)]
+    warm = [_make_span() for _ in range(4)]
+    local = _local_retriever([spans, warm])
+    hn = _hn_tool([WebSearchHit(url="https://example.com/h", title="H", snippet="")])
+
+    loop = ResearchLoop(
+        local_retriever=local,
+        embedder=_embedder(),
+        vector_index=_vector_index(),
+        web_search=None,
+        hn_search=hn,
+        reddit_search=None,
+        mode="augment",
+    )
+    ingest = mocker.patch.object(
+        loop, "_ingest_url", new=AsyncMock(return_value=MagicMock())
+    )
+
+    await loop.retrieve("topic", top_k=10)
+
+    hn.search.assert_awaited_once()
+    assert ingest.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_augment_skips_requery_when_nothing_ingested(mocker) -> None:
+    spans = [_make_span() for _ in range(3)]
+    local = _local_retriever([spans])
+    web = _web_search([])
+    hn = _hn_tool([])
+    reddit = _reddit_tool([])
+
+    loop = ResearchLoop(
+        local_retriever=local,
+        embedder=_embedder(),
+        vector_index=_vector_index(),
+        web_search=web,
+        hn_search=hn,
+        reddit_search=reddit,
+        mode="augment",
+    )
+    ingest = mocker.patch.object(
+        loop, "_ingest_url", new=AsyncMock(return_value=None)
+    )
+
+    out = await loop.retrieve("topic", top_k=10)
+
+    assert out == spans
+    assert ingest.await_count == 0
+    assert local.retrieve.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_augment_returns_local_when_no_sources_configured() -> None:
+    spans = [_make_span() for _ in range(2)]
+    local = _local_retriever([spans])
+
+    loop = ResearchLoop(
+        local_retriever=local,
+        embedder=_embedder(),
+        vector_index=_vector_index(),
+        web_search=None,
+        hn_search=None,
+        reddit_search=None,
+        mode="augment",
+    )
+
+    out = await loop.retrieve("topic")
+
+    assert out == spans
+    local.retrieve.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_augment_tolerates_one_source_raising(mocker) -> None:
+    spans = [_make_span() for _ in range(3)]
+    warm = [_make_span() for _ in range(4)]
+    local = _local_retriever([spans, warm])
+    web = _web_search(
+        [WebSearchHit(url="https://example.com/ok", title="OK", snippet="")]
+    )
+    hn = MagicMock()
+    hn.search = AsyncMock(side_effect=RuntimeError("upstream down"))
+    reddit = _reddit_tool(
+        [WebSearchHit(url="https://example.com/r", title="R", snippet="")]
+    )
+
+    loop = ResearchLoop(
+        local_retriever=local,
+        embedder=_embedder(),
+        vector_index=_vector_index(),
+        web_search=web,
+        hn_search=hn,
+        reddit_search=reddit,
+        mode="augment",
+    )
+    ingest = mocker.patch.object(
+        loop, "_ingest_url", new=AsyncMock(return_value=MagicMock())
+    )
+
+    out = await loop.retrieve("topic", top_k=10)
+
+    assert out == warm
+    # The two surviving sources contributed; HN raised and was skipped.
+    assert ingest.await_count == 2
 
 
 @pytest.mark.asyncio
