@@ -11,6 +11,7 @@ class DiscussionStatus(StrEnum):
     PLANNING = "planning"
     RESEARCHING = "researching"
     DEBATING = "debating"
+    CRITICIZING = "criticizing"
     SYNTHESIZING = "synthesizing"
     COMPLETED = "completed"
     FAILED = "failed"
