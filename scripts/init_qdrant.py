@@ -30,6 +30,8 @@ def main() -> int:
     client = QdrantClient(
         url=settings.qdrant_url,
         api_key=settings.qdrant_api_key or None,
+        timeout=30,
+        check_compatibility=False,
     )
 
     existing = {c.name for c in client.get_collections().collections}
