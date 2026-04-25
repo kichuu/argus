@@ -47,8 +47,9 @@ export function WorldView() {
   const [sel, setSel] = useState<GeoEvent | null>(D.EVENTS[0]);
 
   const sourcesQuery = useQuery({
-    queryKey: ["sources"],
+    queryKey: ["sources-ticker"],
     queryFn: api.sources,
+    refetchInterval: 30_000,
     retry: 0,
     staleTime: 30_000,
   });
@@ -57,13 +58,35 @@ export function WorldView() {
   const apiOnline = status.online && (sourcesQuery.data?.length ?? 0) > 0;
 
   // Build ticker from latest 20 sources; fall back to mock when API offline/empty.
+  // Each entry renders as <publisher · short-title · time-ago>.
   const ticker: Ticker[] = useMemo(() => {
     if (!apiOnline || !sourcesQuery.data) return D.TICKER;
-    return sourcesQuery.data.slice(0, 20).map((s) => ({
-      t: s.type ?? "src",
-      src: s.name ?? s.id,
-      line: s.status ? `status: ${s.status}` : "ingested",
-    }));
+    type LooseSource = {
+      id: string;
+      name?: string;
+      type?: string;
+      status?: string;
+      title?: string;
+      publisher?: string;
+      created_at?: string;
+      ingested_at?: string;
+    };
+    const rows = (sourcesQuery.data as LooseSource[]).slice();
+    rows.sort((a, b) => {
+      const at = new Date(a.created_at ?? a.ingested_at ?? 0).getTime();
+      const bt = new Date(b.created_at ?? b.ingested_at ?? 0).getTime();
+      return bt - at;
+    });
+    return rows.slice(0, 20).map((s) => {
+      const fullTitle = s.title ?? s.name ?? s.id;
+      const shortTitle = fullTitle.length > 80 ? `${fullTitle.slice(0, 77)}…` : fullTitle;
+      const publisher = s.publisher ?? s.type ?? "src";
+      return {
+        t: formatTimeAgo(s.created_at ?? s.ingested_at),
+        src: publisher,
+        line: shortTitle,
+      };
+    });
   }, [apiOnline, sourcesQuery.data, D.TICKER]);
 
   const filtered = topic === "all" ? D.EVENTS : D.EVENTS.filter((e) => e.topic === topic);
@@ -421,20 +444,7 @@ export function WorldView() {
             title="Live Ticker"
             sub={apiOnline ? `${ticker.length} · sources` : "offline · mock"}
             style={{ flex: 1, border: "none", borderTop: "1px solid var(--line-2)" }}
-            right={
-              <>
-                <Dot tone={apiOnline ? "green" : "amber"} pulse />
-                <span
-                  className="tt-up"
-                  style={{
-                    fontSize: 9,
-                    color: apiOnline ? "var(--green)" : "var(--amber)",
-                  }}
-                >
-                  {apiOnline ? "LIVE" : "MOCK"}
-                </span>
-              </>
-            }
+            right={<MockBadge online={apiOnline} loading={status.loading} />}
           >
             <div className="col" style={{ overflowY: "auto" }}>
               {ticker.map((t, i) => (

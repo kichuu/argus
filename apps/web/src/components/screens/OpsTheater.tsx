@@ -12,8 +12,9 @@ import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sparkline } from "@/components/ui/Sparkline";
-import { api } from "@/lib/api";
+import { api, type DiscussionMessage } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
+import type { OrchestrationNode } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
 
 const STATE_COLOR: Record<string, string> = {
@@ -26,6 +27,123 @@ const STATE_COLOR: Record<string, string> = {
 
 const W = 1000;
 const H = 560;
+
+// Pipeline node order for the derived (live) orchestration view. Persona
+// messages all have role "persona" — we group them under one node.
+const LIVE_NODE_ORDER = [
+  "research",
+  "master",
+  "personas",
+  "critic",
+  "synthesizer",
+] as const;
+type LiveNodeId = (typeof LIVE_NODE_ORDER)[number];
+
+const LIVE_NODE_LABEL: Record<LiveNodeId, string> = {
+  research: "RESEARCH",
+  master: "MASTER",
+  personas: "PERSONAS",
+  critic: "CRITIC",
+  synthesizer: "SYNTHESIZER",
+};
+
+const LIVE_NODE_MODEL: Record<LiveNodeId, string> = {
+  research: "haiku-4.5",
+  master: "opus-4.1",
+  personas: "sonnet-4.5",
+  critic: "opus-4.1",
+  synthesizer: "opus-4.1",
+};
+
+// Map a message role onto a derived-orchestration node id.
+function roleToNodeId(role: string | undefined): LiveNodeId | null {
+  if (!role) return null;
+  const r = role.toLowerCase();
+  if (r === "persona" || r === "personas") return "personas";
+  if (r === "research" || r === "researcher") return "research";
+  if (r === "master" || r === "orchestrator") return "master";
+  if (r === "critic") return "critic";
+  if (r === "synthesizer" || r === "synthesis" || r === "synth") return "synthesizer";
+  return null;
+}
+
+// Build a fresh ORCHESTRATION-shaped array from the live message stream.
+function buildLiveOrchestration(
+  messages: DiscussionMessage[],
+  now: number,
+): { nodes: OrchestrationNode[]; activeAgeMsByNode: Partial<Record<LiveNodeId, number>> } {
+  // x positions roughly mirror the existing column lanes (research / orch /
+  // personas / synth) with critic squeezed between personas and synth.
+  const X: Record<LiveNodeId, number> = {
+    research: 0.24,
+    master: 0.42,
+    personas: 0.62,
+    critic: 0.78,
+    synthesizer: 0.92,
+  };
+  const Y: Record<LiveNodeId, number> = {
+    research: 0.5,
+    master: 0.5,
+    personas: 0.5,
+    critic: 0.5,
+    synthesizer: 0.5,
+  };
+
+  // Most recent message overall — its role flags the "active" node.
+  let mostRecent: DiscussionMessage | null = null;
+  let mostRecentMs = -Infinity;
+  // Most recent timestamp seen *per node*, for the live age readout.
+  const lastByNode: Partial<Record<LiveNodeId, number>> = {};
+  const seenByNode: Partial<Record<LiveNodeId, boolean>> = {};
+
+  for (const m of messages) {
+    const nid = roleToNodeId(m.role);
+    if (!nid) continue;
+    seenByNode[nid] = true;
+    if (m.created_at) {
+      const t = Date.parse(m.created_at);
+      if (Number.isFinite(t)) {
+        if ((lastByNode[nid] ?? -Infinity) < t) lastByNode[nid] = t;
+        if (t > mostRecentMs) {
+          mostRecentMs = t;
+          mostRecent = m;
+        }
+      }
+    }
+  }
+
+  const activeNodeId =
+    mostRecent && now - mostRecentMs <= 30_000 ? roleToNodeId(mostRecent.role) : null;
+
+  const nodes: OrchestrationNode[] = LIVE_NODE_ORDER.map((id, idx) => {
+    const seen = !!seenByNode[id];
+    const isActive = activeNodeId === id;
+    const state: OrchestrationNode["state"] = isActive
+      ? "speaking"
+      : seen
+        ? "running"
+        : "idle";
+    const prev = idx > 0 ? LIVE_NODE_ORDER[idx - 1] : null;
+    const next = idx < LIVE_NODE_ORDER.length - 1 ? LIVE_NODE_ORDER[idx + 1] : null;
+    return {
+      id,
+      label: LIVE_NODE_LABEL[id],
+      x: X[id],
+      y: Y[id],
+      model: LIVE_NODE_MODEL[id],
+      state,
+      inEdges: prev ? [prev] : [],
+      outEdges: next ? [next] : [],
+    };
+  });
+
+  const activeAgeMsByNode: Partial<Record<LiveNodeId, number>> = {};
+  if (activeNodeId && lastByNode[activeNodeId] != null) {
+    activeAgeMsByNode[activeNodeId] = now - (lastByNode[activeNodeId] as number);
+  }
+
+  return { nodes, activeAgeMsByNode };
+}
 
 export function OpsTheater() {
   const router = useRouter();
@@ -76,6 +194,20 @@ export function OpsTheater() {
   const liveMsgCount = liveMessages.data?.length ?? 0;
   const liveStatus = liveDiscussion.data?.status;
   const liveTopic = liveDiscussion.data?.topic ?? topic;
+
+  // Derive the orchestration node graph from the live message stream when we
+  // have one; otherwise fall back to the mock animation. The fallback covers
+  // (a) no discussion launched yet and (b) a launched discussion with zero
+  // messages so far.
+  const useDerived = isLive && liveMsgCount > 0;
+  // `tick` keeps the relative-age readouts ticking even between polls.
+  const nowMs = Date.now() + tick * 0;
+  const { nodes: derivedNodes, activeAgeMsByNode } = useDerived
+    ? buildLiveOrchestration(liveMessages.data ?? [], nowMs)
+    : { nodes: [] as OrchestrationNode[], activeAgeMsByNode: {} };
+  const orchestrationNodes: OrchestrationNode[] = useDerived
+    ? derivedNodes
+    : D.ORCHESTRATION;
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
@@ -171,9 +303,9 @@ export function OpsTheater() {
                 />
               ))}
 
-              {D.ORCHESTRATION.flatMap((node) =>
+              {orchestrationNodes.flatMap((node) =>
                 node.outEdges.map((toId) => {
-                  const to = D.ORCHESTRATION.find((n) => n.id === toId);
+                  const to = orchestrationNodes.find((n) => n.id === toId);
                   if (!to) return null;
                   const x1 = node.x * W;
                   const y1 = node.y * H;

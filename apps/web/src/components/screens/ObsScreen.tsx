@@ -1,31 +1,124 @@
 "use client";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Btn } from "@/components/ui/Btn";
+import { Chip } from "@/components/ui/Chip";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { KV } from "@/components/ui/KV";
+import { MockBadge } from "@/components/ui/MockBadge";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Segmented } from "@/components/ui/Segmented";
 import { Sparkline } from "@/components/ui/Sparkline";
+import { api } from "@/lib/api";
 
-const KPIS = [
-  { lbl: "DEBATES 24H", v: "47", spark: [3, 4, 2, 5, 4, 6, 5, 7, 8, 6, 5, 4], c: "var(--amber)" },
-  { lbl: "TOK 24H", v: "1.42M", spark: [80, 120, 90, 140, 180, 160, 220, 190, 250, 210, 240, 280], c: "var(--green)" },
-  { lbl: "COST 24H", v: "$31.06", spark: [2, 3, 2, 4, 5, 4, 6, 5, 7, 6, 7, 8], c: "var(--ink-0)" },
-  { lbl: "ERR RATE", v: "0.4%", spark: [1, 0.8, 0.6, 0.4, 0.5, 0.3, 0.4, 0.4, 0.4, 0.5, 0.4, 0.4], c: "var(--red)" },
-];
+// --- formatting helpers -------------------------------------------------------
 
-const TRACES: [string, string, string, string, string, string][] = [
-  ["d-2026-04-25-01·ORCH", "gpt-4.1", "8.2k", "$0.18", "12.4s", "ok"],
-  ["d-2026-04-25-01·LAI", "gpt-4.1", "2.1k", "$0.04", "3.1s", "ok"],
-  ["d-2026-04-25-01·XI", "gpt-4.1", "1.8k", "$0.03", "2.8s", "ok"],
-  ["d-2026-04-25-01·INDO", "gpt-4.1", "3.4k", "$0.07", "4.2s", "ok"],
-  ["d-2026-04-25-01·TSMC", "gpt-4.1", "1.6k", "$0.03", "2.5s", "ok"],
-  ["d-2026-04-25-01·KG", "gpt-4o-mini", "12k", "$0.04", "8.1s", "ok"],
-  ["d-2026-04-24-04·SYNTH", "gpt-4.1", "9.4k", "$0.21", "14.2s", "ok"],
-  ["src.planet·INGEST", "—", "—", "—", "—", "fail"],
-  ["d-2026-04-24-02·ORCH", "gpt-4.1", "6.8k", "$0.15", "10.1s", "ok"],
-];
+function fmtCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function fmtMoney(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function fmtPct(n: number | null | undefined, digits = 1): string {
+  if (n == null) return "—";
+  return `${(n * 100).toFixed(digits)}%`;
+}
+
+function fmtNumOrDash(n: number | null | undefined, digits = 2): string {
+  if (n == null) return "—";
+  return n.toFixed(digits);
+}
+
+function fmtLatency(s: number | null): string {
+  if (s == null) return "—";
+  return `${s.toFixed(1)}s`;
+}
+
+function statusColor(s: string): string {
+  if (s === "ok" || s === "completed") return "var(--green)";
+  if (s === "fail" || s === "failed") return "var(--red)";
+  return "var(--amber)";
+}
+
+function evalToneColor(v: number | null): string {
+  if (v == null) return "var(--ink-2)";
+  if (v >= 0.8) return "var(--green)";
+  if (v >= 0.6) return "var(--amber)";
+  return "var(--red)";
+}
+
+// --- screen -------------------------------------------------------------------
 
 export function ObsScreen() {
+  const [range, setRange] = useState<"1h" | "24h" | "7d" | "30d">("24h");
+
+  const overviewQ = useQuery({
+    queryKey: ["metrics", "overview"],
+    queryFn: api.metricsOverview,
+    retry: 0,
+    staleTime: 15_000,
+  });
+
+  const tracesQ = useQuery({
+    queryKey: ["metrics", "traces"],
+    queryFn: () => api.metricsTraces({ limit: 20 }),
+    retry: 0,
+    staleTime: 15_000,
+  });
+
+  const evalsQ = useQuery({
+    queryKey: ["metrics", "evals"],
+    queryFn: api.metricsEvals,
+    retry: 0,
+    staleTime: 60_000,
+  });
+
+  const live = overviewQ.isSuccess;
+  const checking = overviewQ.isLoading;
+
+  const ov = overviewQ.data;
+
+  const kpis = [
+    {
+      lbl: "DEBATES 24H",
+      v: ov ? fmtCount(ov.debates_24h) : "—",
+      spark: ov?.spark_debates ?? [],
+      c: "var(--amber)",
+    },
+    {
+      lbl: "TOK 24H",
+      v: ov ? fmtTokens(ov.tok_24h_est) : "—",
+      spark: ov?.spark_claims ?? [],
+      c: "var(--green)",
+    },
+    {
+      lbl: "COST 24H",
+      v: ov ? fmtMoney(ov.cost_24h_est_usd) : "—",
+      spark: ov?.spark_cost ?? [],
+      c: "var(--ink-0)",
+    },
+    {
+      lbl: "ERR RATE",
+      v: ov?.err_rate != null ? fmtPct(ov.err_rate, 1) : "—",
+      spark: ov?.spark_err ?? [],
+      c: "var(--red)",
+    },
+  ];
+
+  const traces = tracesQ.data?.traces ?? [];
+  const evals = evalsQ.data;
+
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
       <ScreenHeader
@@ -33,8 +126,14 @@ export function ObsScreen() {
         title="Observability"
         breadcrumb="// phoenix · temporal · evals"
         right={
-          <div className="row gap-2">
-            <Segmented size="sm" options={["1h", "24h", "7d", "30d"]} value="24h" onChange={() => {}} />
+          <div className="row gap-2" style={{ alignItems: "center", gap: 8 }}>
+            <MockBadge online={live} loading={checking} />
+            <Segmented
+              size="sm"
+              options={["1h", "24h", "7d", "30d"] as const}
+              value={range}
+              onChange={(v) => setRange(v)}
+            />
             <Btn ghost>↗ PHOENIX</Btn>
           </div>
         }
@@ -48,7 +147,7 @@ export function ObsScreen() {
             marginBottom: 16,
           }}
         >
-          {KPIS.map((s) => (
+          {kpis.map((s) => (
             <Panel key={s.lbl}>
               <div style={{ padding: 14 }}>
                 <div className="tt-up muted" style={{ fontSize: 9 }}>
@@ -57,48 +156,70 @@ export function ObsScreen() {
                 <div className="tab" style={{ fontSize: 24, color: s.c, fontWeight: 600 }}>
                   {s.v}
                 </div>
-                <Sparkline data={s.spark} width="100%" height={28} color={s.c} />
+                {s.spark.length > 0 ? (
+                  <Sparkline data={s.spark} width="100%" height={28} color={s.c} />
+                ) : (
+                  <div style={{ height: 28 }} />
+                )}
               </div>
             </Panel>
           ))}
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <Panel id="T" title="Traces" sub="last 9 · phoenix">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Trace</th>
-                  <th>Model</th>
-                  <th>Tok</th>
-                  <th>$</th>
-                  <th>Lat</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TRACES.map((r, i) => (
-                  <tr key={i}>
-                    <td className="tab muted">{r[0]}</td>
-                    <td>{r[1]}</td>
-                    <td className="tab">{r[2]}</td>
-                    <td className="tab">{r[3]}</td>
-                    <td className="tab">{r[4]}</td>
-                    <td>
-                      <span
-                        style={{ color: r[5] === "ok" ? "var(--green)" : "var(--red)" }}
-                        className="tt-up"
-                      >
-                        {r[5]}
-                      </span>
-                    </td>
+          <Panel
+            id="T"
+            title="Traces"
+            sub={`last ${traces.length} · phoenix`}
+          >
+            {traces.length === 0 ? (
+              <div style={{ padding: 14 }}>
+                <EmptyState
+                  title="no traces yet"
+                  hint="discussion runs will appear here once the first one is launched."
+                />
+              </div>
+            ) : (
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Trace</th>
+                    <th>Model</th>
+                    <th>Tok</th>
+                    <th>$</th>
+                    <th>Lat</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {traces.map((r) => (
+                    <tr key={r.id}>
+                      <td className="tab muted">{`${r.id}·${r.label}`}</td>
+                      <td>{r.model}</td>
+                      <td className="tab">{fmtTokens(r.tokens_est)}</td>
+                      <td className="tab">{fmtMoney(r.cost_est_usd)}</td>
+                      <td className="tab">{fmtLatency(r.latency_seconds)}</td>
+                      <td>
+                        <span
+                          style={{ color: statusColor(r.status) }}
+                          className="tt-up"
+                        >
+                          {r.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </Panel>
 
-          <Panel id="W" title="Workflows" sub="temporal · running">
+          <Panel
+            id="W"
+            title="Workflows"
+            sub="temporal · running"
+            right={<Chip tone="amber">demo</Chip>}
+          >
             <div style={{ padding: 14, fontFamily: "JetBrains Mono", fontSize: 10, lineHeight: 1.7 }}>
               <div>
                 <span className="green">▸</span> deliberation_v3 · d-2026-04-25-01 · turn 13/14 · running 1m 34s
@@ -124,7 +245,12 @@ export function ObsScreen() {
             </div>
           </Panel>
 
-          <Panel id="P" title="Prompt Diffs" sub="auto-tuning history">
+          <Panel
+            id="P"
+            title="Prompt Diffs"
+            sub="auto-tuning history"
+            right={<Chip tone="amber">demo</Chip>}
+          >
             <div style={{ padding: 14, fontFamily: "JetBrains Mono", fontSize: 10, lineHeight: 1.7 }}>
               <div>
                 <span className="muted">2026-04-24 18:02</span> · <span className="green">+0.04</span>{" "}
@@ -145,14 +271,47 @@ export function ObsScreen() {
             </div>
           </Panel>
 
-          <Panel id="E" title="Evals" sub="last run · 47 debates">
+          <Panel
+            id="E"
+            title="Evals"
+            sub={
+              evals?.last_run
+                ? `last run · ${evals.last_run}${evals.n_gold != null ? ` · ${evals.n_gold} gold` : ""}`
+                : "last run · —"
+            }
+          >
             <div style={{ padding: 14 }}>
-              <KV k="Consensus quality" v="0.78" vColor="var(--green)" />
-              <KV k="Citation coverage" v="0.91" vColor="var(--green)" />
-              <KV k="Persona drift" v="0.06" vColor="var(--green)" />
-              <KV k="Synthesizer faithfulness" v="0.84" vColor="var(--green)" />
-              <KV k="Hallucination rate" v="0.011" vColor="var(--green)" />
-              <KV k="Adversarial hold-out" v="0.71" vColor="var(--amber)" />
+              <KV
+                k="Consensus quality"
+                v={fmtNumOrDash(evals?.consensus_quality)}
+                vColor={evalToneColor(evals?.consensus_quality ?? null)}
+              />
+              <KV
+                k="Citation coverage"
+                v={fmtNumOrDash(evals?.citation_coverage)}
+                vColor={evalToneColor(evals?.citation_coverage ?? null)}
+              />
+              <KV
+                k="Persona drift"
+                v={fmtNumOrDash(evals?.persona_drift)}
+                vColor={evalToneColor(evals?.persona_drift ?? null)}
+              />
+              <KV
+                k="Synthesizer faithfulness"
+                v={fmtNumOrDash(evals?.synth_faithfulness)}
+                vColor={evalToneColor(evals?.synth_faithfulness ?? null)}
+              />
+              <KV
+                k="Hallucination rate"
+                v={fmtNumOrDash(evals?.hallucination_rate, 3)}
+                vColor={
+                  evals?.hallucination_rate == null
+                    ? "var(--ink-2)"
+                    : evals.hallucination_rate <= 0.05
+                      ? "var(--green)"
+                      : "var(--red)"
+                }
+              />
             </div>
           </Panel>
         </div>

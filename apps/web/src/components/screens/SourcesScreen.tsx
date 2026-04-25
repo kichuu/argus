@@ -7,6 +7,7 @@ import { Chip } from "@/components/ui/Chip";
 import { Dot } from "@/components/ui/Dot";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { KV } from "@/components/ui/KV";
+import { MockBadge } from "@/components/ui/MockBadge";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -21,6 +22,14 @@ export function SourcesScreen() {
     queryFn: api.sources,
     retry: 0,
     staleTime: 30_000,
+  });
+
+  const stats = useQuery({
+    queryKey: ["source-stats"],
+    queryFn: api.sourceStats,
+    retry: 0,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const [modalOpen, setModalOpen] = useState(false);

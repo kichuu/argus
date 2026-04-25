@@ -75,6 +75,11 @@ class Settings(BaseSettings):
 
     vertical: str = Field(default="unset", description="Active vertical: geopolitics|climate|finance|civic|unset")
 
+    ingest_enabled: bool = Field(default=True, description="Auto-run the feed roster on a schedule when the API is up")
+    ingest_interval_seconds: int = Field(default=300, ge=60, description="How often the in-process scheduler runs the roster")
+    ingest_max_items_per_feed: int = Field(default=3, ge=1, description="Cap per-feed items per scheduled tick")
+    ingest_feeds_path: Path = Path("./config/feeds.yaml")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

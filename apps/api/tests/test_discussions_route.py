@@ -128,6 +128,31 @@ async def test_post_discussion_with_explicit_vertical(
 
 
 @pytest.mark.asyncio
+async def test_discussions_route_params(
+    client: AsyncClient,
+    fake_store: dict[type, dict[Any, Any]],
+) -> None:
+    """POST accepts the new depth / source_kinds / auto_personas fields."""
+    async with client as c:
+        resp = await c.post(
+            "/discussions",
+            json={
+                "topic": "x",
+                "depth": "deep",
+                "source_kinds": ["rss"],
+                "auto_personas": False,
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "planning"
+    new_id = UUID(body["id"])
+    saved = fake_store[DiscussionRunModel][new_id]
+    assert saved.topic == "x"
+    assert saved.vertical == "geopolitics"
+
+
+@pytest.mark.asyncio
 async def test_get_discussion_404(client: AsyncClient) -> None:
     missing = uuid4()
     async with client as c:

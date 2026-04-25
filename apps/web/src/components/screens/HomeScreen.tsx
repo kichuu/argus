@@ -32,8 +32,19 @@ export function HomeScreen() {
     staleTime: 30_000,
   });
 
+  const suggested = useQuery({
+    queryKey: ["suggested-topics"],
+    queryFn: () => api.suggestedTopics({ limit: 5 }),
+    retry: 0,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+  const liveTopics = suggested.data?.topics ?? [];
+  const liveOk = suggested.isSuccess && liveTopics.length > 0;
+
   const startMutation = useMutation({
-    mutationFn: (body: { topic: string; vertical?: string }) => api.startDiscussion(body),
+    mutationFn: (body: Parameters<typeof api.startDiscussion>[0]) =>
+      api.startDiscussion(body),
     retry: 0,
   });
 
@@ -45,8 +56,18 @@ export function HomeScreen() {
     setTopic(topic);
     setLaunchError(null);
 
+    const source_kinds = (
+      ["rss", "news", "social", "kg"] as const
+    ).filter((k) => sources[k]);
+
     startMutation.mutate(
-      { topic, vertical: "geopolitics" },
+      {
+        topic,
+        vertical: "geopolitics",
+        depth,
+        source_kinds,
+        auto_personas: autoPersonas,
+      },
       {
         onSuccess: (res) => {
           setDiscussionId(res.id);
@@ -202,35 +223,82 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
         <Panel
           id="B"
           title="Trending Questions"
-          sub="from world-state delta · 24h"
+          sub={
+            liveOk
+              ? `live · ${suggested.data?.claim_basis_count ?? 0} recent claims`
+              : "offline · mock"
+          }
           style={{ flex: 1, minHeight: 300 }}
+          right={
+            <Chip tone={liveOk ? "green" : "amber"}>
+              {liveOk ? "live" : "mock"}
+            </Chip>
+          }
         >
           <div className="col" style={{ overflowY: "auto" }}>
-            {D.TRENDING.map((q, i) => (
-              <div
-                key={i}
-                onClick={() => launch(q)}
-                style={{
-                  padding: "10px 12px",
-                  borderBottom: "1px solid var(--line-1)",
-                  cursor: "pointer",
-                  display: "flex",
-                  gap: 8,
-                  alignItems: "flex-start",
-                }}
-              >
-                <span
-                  className="tab"
-                  style={{ color: "var(--amber)", fontSize: 10, minWidth: 18 }}
-                >
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span style={{ flex: 1, fontSize: 11, color: "var(--ink-0)", lineHeight: 1.4 }}>
-                  {q}
-                </span>
-                <span style={{ color: "var(--green)", fontSize: 10 }}>↗</span>
-              </div>
-            ))}
+            {liveOk
+              ? liveTopics.map((topic, i) => (
+                  <div
+                    key={topic.id || i}
+                    onClick={() => launch(topic.title)}
+                    style={{
+                      padding: "10px 12px",
+                      borderBottom: "1px solid var(--line-1)",
+                      cursor: "pointer",
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <span
+                      className="tab"
+                      style={{ color: "var(--amber)", fontSize: 10, minWidth: 18 }}
+                    >
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span
+                      style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}
+                    >
+                      <span style={{ fontSize: 11, color: "var(--ink-0)", lineHeight: 1.4 }}>
+                        {topic.title}
+                      </span>
+                      {topic.rationale && (
+                        <span
+                          className="muted"
+                          style={{ fontSize: 9, color: "var(--ink-2)", lineHeight: 1.4 }}
+                        >
+                          {topic.rationale}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ color: "var(--green)", fontSize: 10 }}>↗</span>
+                  </div>
+                ))
+              : D.TRENDING.map((q, i) => (
+                  <div
+                    key={i}
+                    onClick={() => launch(q)}
+                    style={{
+                      padding: "10px 12px",
+                      borderBottom: "1px solid var(--line-1)",
+                      cursor: "pointer",
+                      display: "flex",
+                      gap: 8,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <span
+                      className="tab"
+                      style={{ color: "var(--amber)", fontSize: 10, minWidth: 18 }}
+                    >
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 11, color: "var(--ink-0)", lineHeight: 1.4 }}>
+                      {q}
+                    </span>
+                    <span style={{ color: "var(--green)", fontSize: 10 }}>↗</span>
+                  </div>
+                ))}
           </div>
         </Panel>
       </div>

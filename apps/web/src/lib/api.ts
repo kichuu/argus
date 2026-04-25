@@ -54,6 +54,16 @@ export type SourceIngestResponse = {
   trust_tier?: number | null;
 };
 
+export type SourceStats = {
+  total: number;
+  last_24h: number;
+  events_per_hour_24h: number;
+  by_trust_tier: Record<string, number>;
+  by_publisher_top10: { name: string; count: number }[];
+  duplicates_blocked_24h_est: number | null;
+  spark_24h: number[];
+};
+
 export type DiscussionMessage = {
   id?: string;
   agent_id?: string;
@@ -80,6 +90,72 @@ export type PersonaSummary = {
   description: string;
   knowledge_emphasis: string[];
   created_at?: string;
+};
+
+export type SuggestedTopic = { id: string; title: string; rationale?: string };
+export type SuggestedTopicsResponse = {
+  topics: SuggestedTopic[];
+  generated_at: string;
+  claim_basis_count: number;
+  error?: string;
+};
+
+export type ConfigResponse = {
+  vertical: string;
+  models: Record<
+    "synthesis" | "extractor" | "verifier" | "research" | "persona" | "master" | "critic",
+    string
+  >;
+  ingest: {
+    enabled: boolean;
+    interval_seconds: number;
+    max_items_per_feed: number;
+    feeds_path: string;
+  };
+  qdrant: { collection: string };
+  embedding_model: string;
+  reranker_model: string;
+};
+
+export type MetricsOverview = {
+  debates_24h: number;
+  claims_24h: number;
+  claims_total: number;
+  sources_24h: number;
+  sources_total: number;
+  verified_rate: number | null;
+  hallucination_rate: number | null;
+  tok_24h_est: number;
+  cost_24h_est_usd: number;
+  err_rate: number | null;
+  spark_debates: number[];
+  spark_claims: number[];
+  spark_cost: number[];
+  spark_err: number[];
+};
+
+export type MetricsTraceRow = {
+  id: string;
+  label: string;
+  model: string;
+  tokens_est: number;
+  cost_est_usd: number;
+  latency_seconds: number | null;
+  status: string;
+};
+
+export type MetricsTraces = {
+  traces: MetricsTraceRow[];
+};
+
+export type MetricsEvals = {
+  consensus_quality: number | null;
+  citation_coverage: number | null;
+  persona_drift: number | null;
+  synth_faithfulness: number | null;
+  hallucination_rate: number | null;
+  n_gold: number | null;
+  last_run: string | null;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -109,6 +185,7 @@ export const api = {
   entity: (id: string) => request<EntitySummary>(`/entities/${id}`),
   sources: () => request<SourceSummary[]>("/sources"),
   source: (id: string) => request<SourceSummary>(`/sources/${id}`),
+  sourceStats: () => request<SourceStats>("/sources/stats"),
   ingestSource: (body: { url: string }) =>
     request<SourceIngestResponse>("/sources", {
       method: "POST",
@@ -120,7 +197,13 @@ export const api = {
     request<DiscussionMessage[]>(`/discussions/${id}/messages`),
   discussionClaims: (id: string) =>
     request<ClaimSummary[]>(`/discussions/${id}/claims`),
-  startDiscussion: (body: { topic: string; vertical?: string }) =>
+  startDiscussion: (body: {
+    topic: string;
+    vertical?: string;
+    depth?: "quick" | "standard" | "deep";
+    source_kinds?: ("rss" | "news" | "social" | "kg")[];
+    auto_personas?: boolean;
+  }) =>
     request<{ id: string; status: string }>("/discussions", {
       method: "POST",
       body: JSON.stringify(body),
@@ -140,4 +223,20 @@ export const api = {
     }),
   deletePersona: (id: string) =>
     request<void>(`/personas/${id}`, { method: "DELETE" }),
+  config: () => request<ConfigResponse>("/config"),
+  suggestedTopics: (opts?: { limit?: number; force?: boolean }) => {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.force) params.set("force", "true");
+    const qs = params.toString();
+    return request<SuggestedTopicsResponse>(
+      `/suggested-topics${qs ? `?${qs}` : ""}`,
+    );
+  },
+  metricsOverview: () => request<MetricsOverview>("/metrics/overview"),
+  metricsTraces: (opts?: { limit?: number }) => {
+    const qs = opts?.limit != null ? `?limit=${opts.limit}` : "";
+    return request<MetricsTraces>(`/metrics/traces${qs}`);
+  },
+  metricsEvals: () => request<MetricsEvals>("/metrics/evals"),
 };

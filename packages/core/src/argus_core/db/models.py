@@ -104,7 +104,16 @@ class PersonaModel(Base):
     frame: Mapped[str] = mapped_column(String(128))
     description: Mapped[str] = mapped_column(Text)
     knowledge_emphasis: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
+    temperature: Mapped[float] = mapped_column(Float, default=0.7, nullable=False)
+    redlines: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, nullable=False, server_default="{}"
+    )
+    bias: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    model_assignment: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utc_now, onupdate=_utc_now
+    )
 
 
 class DiscussionRunModel(Base):

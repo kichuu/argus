@@ -11,7 +11,7 @@ Frontend contract:
 """
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from argus_core.db.models import (
@@ -41,6 +41,14 @@ class StartDiscussionBody(BaseModel):
     topic: str = Field(min_length=1)
     # Default matches the committed vertical in config/vertical.yaml.
     vertical: str = "geopolitics"
+    # Forward-compat run params. Master/research agents will read these once
+    # upgraded; for now we accept + log them so the wiring is verifiable from
+    # the frontend.
+    depth: Literal["quick", "standard", "deep"] = "standard"
+    source_kinds: list[Literal["rss", "news", "social", "kg"]] = Field(
+        default_factory=lambda: ["rss", "news"]
+    )
+    auto_personas: bool = True
 
 
 class StartDiscussionResponse(BaseModel):
@@ -122,6 +130,16 @@ async def start_discussion(
     client can hit ``GET /discussions/{id}`` immediately.
     """
     discussion_id = uuid4()
+    # NOTE: depth / source_kinds / auto_personas accepted but not yet acted on.
+    # DiscussionRunModel has no free-form JSONB column to stash them in, so
+    # we log them at info level and rely on the agents to read them off the
+    # body once they're upgraded to honor run-time controls.
+    logger.info(
+        "discussion.start.params depth=%s sources=%s auto_personas=%s",
+        body.depth,
+        body.source_kinds,
+        body.auto_personas,
+    )
     row = DiscussionRunModel(
         id=discussion_id,
         topic=body.topic,

@@ -6,7 +6,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from argus_api import __version__
-from argus_api.routes import claims, discussions, entities, health, personas, sources
+from argus_api.ingest_scheduler import get_scheduler, maybe_start_scheduler
+from argus_api.routes import (
+    claims,
+    config,
+    discussions,
+    entities,
+    health,
+    metrics,
+    personas,
+    sources,
+    suggested,
+)
 
 logger = get_logger(__name__)
 
@@ -15,8 +26,12 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     logger.info("argus_api.startup", version=__version__)
-    yield
-    logger.info("argus_api.shutdown")
+    await maybe_start_scheduler()
+    try:
+        yield
+    finally:
+        await get_scheduler().stop()
+        logger.info("argus_api.shutdown")
 
 
 app = FastAPI(
@@ -39,3 +54,6 @@ app.include_router(entities.router)
 app.include_router(sources.router)
 app.include_router(discussions.router)
 app.include_router(personas.router)
+app.include_router(suggested.router)
+app.include_router(config.router)
+app.include_router(metrics.router)

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -13,7 +13,7 @@ from argus_ingestion.store import RawStore
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field, HttpUrl
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 logger = get_logger(__name__)
 
@@ -70,6 +70,21 @@ class SourceDetail(BaseModel):
     trust_tier: int
     publisher: str | None = None
     language: str | None = None
+
+
+class PublisherCount(BaseModel):
+    name: str
+    count: int
+
+
+class SourceStats(BaseModel):
+    total: int
+    last_24h: int
+    events_per_hour_24h: float
+    by_trust_tier: dict[str, int]
+    by_publisher_top10: list[PublisherCount]
+    duplicates_blocked_24h_est: int | None = None
+    spark_24h: list[int]
 
 
 class SourceIngestRequest(BaseModel):
@@ -159,6 +174,87 @@ async def list_sources(
     if status_filter is not None:
         summaries = [s for s in summaries if s.status == status_filter]
     return summaries
+
+
+@router.get("/stats", response_model=SourceStats)
+async def source_stats() -> SourceStats:
+    """Aggregate stats over all sources for the right-rail dashboard.
+
+    Counts are derived from the ``sources`` table; duplicates_blocked is not
+    tracked yet and returned as ``null``.
+    """
+    now = datetime.now(UTC)
+    cutoff_24h = now - timedelta(hours=24)
+
+    async with session_scope() as session:
+        total = int(
+            (await session.execute(select(func.count()).select_from(SourceModel))).scalar_one()
+            or 0
+        )
+        last_24h = int(
+            (
+                await session.execute(
+                    select(func.count())
+                    .select_from(SourceModel)
+                    .where(SourceModel.fetched_at >= cutoff_24h)
+                )
+            ).scalar_one()
+            or 0
+        )
+
+        # Trust tier distribution (across all sources, not just 24h).
+        tier_rows = (
+            await session.execute(
+                select(SourceModel.trust_tier, func.count())
+                .group_by(SourceModel.trust_tier)
+            )
+        ).all()
+        by_trust_tier: dict[str, int] = {
+            str(int(tier) if tier is not None else 4): int(cnt) for tier, cnt in tier_rows
+        }
+
+        # Top 10 publishers (across all sources). NULL/empty publishers excluded.
+        pub_rows = (
+            await session.execute(
+                select(SourceModel.publisher, func.count())
+                .where(SourceModel.publisher.is_not(None))
+                .group_by(SourceModel.publisher)
+                .order_by(func.count().desc())
+                .limit(10)
+            )
+        ).all()
+        by_publisher_top10 = [
+            PublisherCount(name=name, count=int(cnt)) for name, cnt in pub_rows if name
+        ]
+
+        # Hourly buckets for last 24h. Bucket in Python — portable across DBs.
+        recent_rows = (
+            await session.execute(
+                select(SourceModel.fetched_at).where(SourceModel.fetched_at >= cutoff_24h)
+            )
+        ).all()
+        spark_24h = [0] * 24
+        for (ts,) in recent_rows:
+            if ts is None:
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=UTC)
+            if ts < cutoff_24h or ts > now:
+                continue
+            delta = now - ts
+            idx = 23 - int(delta.total_seconds() // 3600)
+            if 0 <= idx < 24:
+                spark_24h[idx] += 1
+
+    return SourceStats(
+        total=total,
+        last_24h=last_24h,
+        events_per_hour_24h=round(last_24h / 24, 2),
+        by_trust_tier=by_trust_tier,
+        by_publisher_top10=by_publisher_top10,
+        duplicates_blocked_24h_est=None,
+        spark_24h=spark_24h,
+    )
 
 
 @router.get("/{source_id}", response_model=SourceDetail)
