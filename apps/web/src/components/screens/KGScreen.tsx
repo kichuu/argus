@@ -122,8 +122,11 @@ export function KGScreen() {
 
   useEffect(() => {
     if (filteredEntities.length === 0) {
-      setLayout({ nodes: [], links: [] });
-      layoutKey.current = "";
+      // Guard against re-running setState every render when input is empty.
+      if (layoutKey.current !== "") {
+        setLayout({ nodes: [], links: [] });
+        layoutKey.current = "";
+      }
       return;
     }
 

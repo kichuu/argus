@@ -1,59 +1,13 @@
 "use client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Bar } from "@/components/ui/Bar";
 import { Btn } from "@/components/ui/Btn";
 import { Chip } from "@/components/ui/Chip";
-import { KV } from "@/components/ui/KV";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { MockBadge } from "@/components/ui/MockBadge";
-import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { api, type PersonaSummary } from "@/lib/api";
 import { apiStatus } from "@/lib/api-status";
-import { ARGUS_DATA, type Persona } from "@/mock/data";
-
-function SliderRow({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div style={{ padding: "5px 0" }}>
-      <div className="row gap-2" style={{ alignItems: "center" }}>
-        <span
-          className="tt-up"
-          style={{ fontSize: 9, color: "var(--ink-2)", minWidth: 110 }}
-        >
-          {label}
-        </span>
-        <div
-          style={{
-            flex: 1,
-            height: 4,
-            background: "var(--bg-3)",
-            border: "1px solid var(--line-1)",
-            position: "relative",
-          }}
-        >
-          <div style={{ width: `${value * 100}%`, height: "100%", background: color }} />
-          <div
-            style={{
-              position: "absolute",
-              left: `${value * 100}%`,
-              top: -3,
-              width: 2,
-              height: 10,
-              background: "var(--ink-0)",
-              transform: "translateX(-1px)",
-            }}
-          />
-        </div>
-        <span
-          className="tab"
-          style={{ fontSize: 10, color: "var(--ink-1)", minWidth: 32, textAlign: "right" }}
-        >
-          {value.toFixed(2)}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 const MODEL_OPTIONS = [
   "openai:gpt-4o",
@@ -62,24 +16,43 @@ const MODEL_OPTIONS = [
   "openai:o4-mini",
 ] as const;
 
+const _PALETTE = [
+  "var(--p-1)",
+  "var(--p-2)",
+  "var(--p-3)",
+  "var(--p-4)",
+  "var(--p-5)",
+  "var(--p-6)",
+  "var(--p-7)",
+];
+
+function colorForFrame(frame: string): string {
+  if (!frame) return "var(--ink-2)";
+  let h = 0;
+  for (let i = 0; i < frame.length; i++) h = (h + frame.charCodeAt(i)) | 0;
+  return _PALETTE[Math.abs(h) % _PALETTE.length];
+}
+
+const EMPTY_DRAFT = {
+  frame: "",
+  description: "",
+  emphasis: "",
+  bias: "",
+  model: MODEL_OPTIONS[0] as string,
+  temperature: 0.7,
+  redlines: "",
+};
+
 export function PersonaDesigner() {
-  const D = ARGUS_DATA;
   const qc = useQueryClient();
-  const [sel, setSel] = useState<Persona>(D.PERSONAS[0]);
   const [savedSel, setSavedSel] = useState<string | null>(null);
-  const [draftFrame, setDraftFrame] = useState<string>(D.PERSONAS[0].role);
-  const [draftDescription, setDraftDescription] = useState<string>(D.PERSONAS[0].bias);
-  const [draftEmphasis, setDraftEmphasis] = useState<string>(
-    D.PERSONAS[0].beliefs.join(", "),
-  );
-  const [draftTemperature, setDraftTemperature] = useState<number>(
-    D.PERSONAS[0].temperature,
-  );
-  const [draftRedlines, setDraftRedlines] = useState<string>(
-    D.PERSONAS[0].redlines.join("\n"),
-  );
-  const [draftBias, setDraftBias] = useState<string>(D.PERSONAS[0].bias);
-  const [draftModel, setDraftModel] = useState<string>(D.PERSONAS[0].model);
+  const [draftFrame, setDraftFrame] = useState<string>(EMPTY_DRAFT.frame);
+  const [draftDescription, setDraftDescription] = useState<string>(EMPTY_DRAFT.description);
+  const [draftEmphasis, setDraftEmphasis] = useState<string>(EMPTY_DRAFT.emphasis);
+  const [draftTemperature, setDraftTemperature] = useState<number>(EMPTY_DRAFT.temperature);
+  const [draftRedlines, setDraftRedlines] = useState<string>(EMPTY_DRAFT.redlines);
+  const [draftBias, setDraftBias] = useState<string>(EMPTY_DRAFT.bias);
+  const [draftModel, setDraftModel] = useState<string>(EMPTY_DRAFT.model);
 
   const personasQuery = useQuery({
     queryKey: ["personas"],
@@ -92,8 +65,8 @@ export function PersonaDesigner() {
   const apiOnline = status.online;
 
   const savedPersonas: PersonaSummary[] = useMemo(
-    () => (apiOnline && personasQuery.data ? personasQuery.data : []),
-    [apiOnline, personasQuery.data],
+    () => (personasQuery.data ?? []) as PersonaSummary[],
+    [personasQuery.data],
   );
 
   const createMutation = useMutation({
@@ -106,8 +79,9 @@ export function PersonaDesigner() {
       bias: string | null;
       model_assignment: string | null;
     }) => api.createPersona(body),
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ["personas"] });
+      if (created?.id) setSavedSel(created.id);
     },
   });
 
@@ -133,10 +107,11 @@ export function PersonaDesigner() {
     mutationFn: (id: string) => api.deletePersona(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["personas"] });
+      setSavedSel(null);
     },
   });
 
-  // When a persona is loaded into the designer from the saved list, sync drafts.
+  // Load a saved persona into the designer.
   useEffect(() => {
     if (!savedSel) return;
     const p = savedPersonas.find((x) => x.id === savedSel);
@@ -150,23 +125,23 @@ export function PersonaDesigner() {
     setDraftModel(p.model_assignment ?? MODEL_OPTIONS[0]);
   }, [savedSel, savedPersonas]);
 
-  const onSelectMockPersona = (p: Persona) => {
-    setSel(p);
+  const resetDraft = () => {
     setSavedSel(null);
-    setDraftFrame(p.role);
-    setDraftDescription(p.bias);
-    setDraftEmphasis(p.beliefs.join(", "));
-    setDraftTemperature(p.temperature);
-    setDraftRedlines(p.redlines.join("\n"));
-    setDraftBias(p.bias);
-    setDraftModel(p.model);
+    setDraftFrame(EMPTY_DRAFT.frame);
+    setDraftDescription(EMPTY_DRAFT.description);
+    setDraftEmphasis(EMPTY_DRAFT.emphasis);
+    setDraftTemperature(EMPTY_DRAFT.temperature);
+    setDraftRedlines(EMPTY_DRAFT.redlines);
+    setDraftBias(EMPTY_DRAFT.bias);
+    setDraftModel(EMPTY_DRAFT.model);
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
-  const saveDisabled = !apiOnline || isSaving;
+  const draftValid = draftFrame.trim().length > 0 && draftDescription.trim().length > 0;
+  const saveDisabled = !apiOnline || isSaving || !draftValid;
 
   const onSave = () => {
-    if (!apiOnline) return;
+    if (!apiOnline || !draftValid) return;
     const knowledge_emphasis = draftEmphasis
       .split(",")
       .map((s) => s.trim())
@@ -176,8 +151,8 @@ export function PersonaDesigner() {
       .map((s) => s.trim())
       .filter(Boolean);
     const payload = {
-      frame: draftFrame || sel.role,
-      description: draftDescription || sel.bias,
+      frame: draftFrame.trim(),
+      description: draftDescription.trim(),
       knowledge_emphasis,
       temperature: draftTemperature,
       redlines,
@@ -192,13 +167,16 @@ export function PersonaDesigner() {
   };
 
   const onDelete = (id: string) => {
-    if (savedSel === id) setSavedSel(null);
     deleteMutation.mutate(id);
   };
 
-  const headerSub = apiOnline
-    ? `// ${savedPersonas.length} saved · ${D.PERSONAS.length} cast`
-    : `// ${D.PERSONAS.length} cast · auto-balance enabled`;
+  const headerSub = `// ${savedPersonas.length} saved`;
+  const draftColor = colorForFrame(draftFrame);
+  const draftInitial = draftFrame.trim().charAt(0).toUpperCase() || "·";
+  const redlineCount = draftRedlines
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean).length;
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
@@ -210,104 +188,92 @@ export function PersonaDesigner() {
           <div className="row gap-2" style={{ alignItems: "center" }}>
             <MockBadge online={apiOnline} loading={status.loading} />
             {!apiOnline && <Chip tone="amber">offline · save disabled</Chip>}
-            <Btn ghost>+ ADD PERSONA</Btn>
-            <Btn ghost>◫ TEMPLATE LIBRARY</Btn>
-            <Btn ghost>◐ AUTO-BALANCE</Btn>
+            <Btn ghost onClick={resetDraft}>
+              + NEW
+            </Btn>
             <Btn primary onClick={onSave} disabled={saveDisabled}>
-              {isSaving ? "SAVING…" : savedSel ? "UPDATE PERSONA →" : "SAVE CAST →"}
+              {isSaving ? "SAVING…" : savedSel ? "UPDATE PERSONA →" : "SAVE PERSONA →"}
             </Btn>
           </div>
         }
       />
 
       <div className="row grow" style={{ overflow: "hidden" }}>
+        {/* Left: saved personas grid */}
         <div className="grow col" style={{ overflow: "hidden", padding: 16, gap: 12 }}>
           <div
-            style={{
-              border: "1px solid var(--line-2)",
-              background: "var(--bg-2)",
-              padding: 12,
-            }}
+            className="row gap-2"
+            style={{ alignItems: "center" }}
           >
+            <span className="tt-up" style={{ fontSize: 10, color: "var(--ink-2)" }}>
+              SAVED PERSONAS
+            </span>
+            <span className="muted" style={{ fontSize: 9 }}>
+              · {savedPersonas.length} on file
+            </span>
+            <div style={{ flex: 1 }} />
+            {(createMutation.isError || updateMutation.isError) && (
+              <Chip tone="amber">save failed</Chip>
+            )}
+          </div>
+
+          {personasQuery.isLoading ? (
+            <div className="muted" style={{ fontSize: 11 }}>loading personas…</div>
+          ) : savedPersonas.length === 0 ? (
+            <EmptyState
+              title="No saved personas yet"
+              hint="Frames like 'skeptical empiricist' or 'regulator viewpoint' get cast into debates by the master agent. Fill the form on the right and click SAVE."
+            />
+          ) : (
             <div
-              className="row gap-2"
-              style={{ alignItems: "center", marginBottom: 8 }}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+                gap: 12,
+                overflowY: "auto",
+                paddingRight: 4,
+              }}
             >
-              <span
-                className="tt-up"
-                style={{ fontSize: 10, color: "var(--ink-2)" }}
-              >
-                SAVED PERSONAS
-              </span>
-              <span className="muted" style={{ fontSize: 9 }}>
-                · {savedPersonas.length} on file
-              </span>
-              <div style={{ flex: 1 }} />
-              {(createMutation.isError || updateMutation.isError) && (
-                <Chip tone="amber">save failed</Chip>
-              )}
-            </div>
-            {!apiOnline ? (
-              <div className="muted" style={{ fontSize: 10 }}>
-                offline · using mock cast below
-              </div>
-            ) : savedPersonas.length === 0 ? (
-              <div className="muted" style={{ fontSize: 10 }}>
-                no saved personas yet — click SAVE CAST to create one
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                  gap: 8,
-                }}
-              >
-                {savedPersonas.map((p) => {
-                  const isSel = savedSel === p.id;
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => setSavedSel(p.id)}
-                      style={{
-                        border: `1px solid ${isSel ? "var(--amber)" : "var(--line-2)"}`,
-                        background: isSel ? "var(--bg-3)" : "var(--bg-1)",
-                        padding: "8px 10px",
-                        cursor: "pointer",
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "flex-start",
-                      }}
-                    >
+              {savedPersonas.map((p) => {
+                const isSel = savedSel === p.id;
+                const color = p.color || colorForFrame(p.frame);
+                const initial = p.frame.charAt(0).toUpperCase() || "·";
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setSavedSel(p.id)}
+                    style={{
+                      padding: 14,
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                      border: `${isSel ? 2 : 1}px solid ${isSel ? color : "var(--line-2)"}`,
+                      background: isSel ? "var(--bg-3)" : "var(--bg-2)",
+                    }}
+                  >
+                    <div className="row gap-3" style={{ alignItems: "flex-start" }}>
+                      <div
+                        style={{
+                          width: 42,
+                          height: 42,
+                          background: color,
+                          color: "var(--bg-0)",
+                          fontWeight: 700,
+                          fontSize: 18,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {initial}
+                      </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "var(--ink-0)",
-                            fontWeight: 600,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                        <div style={{ fontSize: 13, color: "var(--ink-0)", fontWeight: 600 }}>
                           {p.frame}
                         </div>
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: "var(--ink-2)",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {p.description}
-                        </div>
-                        <div
-                          className="tt-up"
-                          style={{ fontSize: 9, color: "var(--ink-3)", marginTop: 2 }}
-                        >
-                          {p.knowledge_emphasis.length} emphasis
+                        <div className="tt-up" style={{ fontSize: 9, color, marginTop: 2 }}>
+                          {p.model_assignment ?? "model unset"}
                         </div>
                       </div>
                       <span
@@ -317,7 +283,7 @@ export function PersonaDesigner() {
                         }}
                         title="delete"
                         style={{
-                          fontSize: 12,
+                          fontSize: 14,
                           color: "var(--ink-3)",
                           cursor: "pointer",
                           padding: "0 4px",
@@ -326,128 +292,71 @@ export function PersonaDesigner() {
                         ×
                       </span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-              gap: 12,
-              overflowY: "auto",
-              paddingRight: 4,
-            }}
-          >
-            {D.PERSONAS.map((p) => {
-              const isSel = sel.id === p.id && !savedSel;
-              return (
-                <div
-                  key={p.id}
-                  onClick={() => onSelectMockPersona(p)}
-                  className={`panel bd-${p.color}`}
-                  style={{
-                    padding: 14,
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10,
-                    borderColor: isSel ? p.colorVar : "var(--line-2)",
-                    borderWidth: isSel ? 2 : 1,
-                    borderStyle: "solid",
-                    background: isSel ? "var(--bg-3)" : "var(--bg-2)",
-                  }}
-                >
-                  <div className="row gap-3" style={{ alignItems: "flex-start" }}>
-                    <PersonaAvatar p={p} size={42} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{ fontSize: 13, color: "var(--ink-0)", fontWeight: 600 }}
-                      >
-                        {p.name}
-                      </div>
-                      <div style={{ fontSize: 11, color: "var(--ink-1)" }}>{p.role}</div>
-                      <div
-                        className="tt-up"
-                        style={{ fontSize: 9, color: p.colorVar, marginTop: 2 }}
-                      >
-                        {p.flag} {p.country} · {p.model}
-                      </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--ink-1)",
+                        lineHeight: 1.4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: "vertical",
+                      }}
+                    >
+                      {p.description}
                     </div>
-                    <span style={{ fontSize: 11, color: "var(--ink-3)", cursor: "pointer" }}>
-                      ⋯
-                    </span>
-                  </div>
-                  <div className="tt-up" style={{ fontSize: 9, color: "var(--ink-2)" }}>
-                    BIAS
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--ink-1)", lineHeight: 1.4 }}>
-                    {p.bias}
-                  </div>
-                  <div className="row gap-3">
-                    <div style={{ flex: 1 }}>
+                    <div className="row gap-2" style={{ flexWrap: "wrap" }}>
+                      {p.knowledge_emphasis.slice(0, 3).map((k, i) => (
+                        <Chip key={i}>{k}</Chip>
+                      ))}
+                      {p.knowledge_emphasis.length > 3 && (
+                        <span className="muted" style={{ fontSize: 9 }}>
+                          +{p.knowledge_emphasis.length - 3}
+                        </span>
+                      )}
+                    </div>
+                    <div className="row gap-2" style={{ alignItems: "center" }}>
                       <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)" }}>
                         TEMP
                       </span>
-                      <Bar value={p.temperature} color={p.colorVar} width="100%" />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                        AGGR
+                      <span className="tab" style={{ fontSize: 10, color: "var(--ink-1)" }}>
+                        {(p.temperature ?? 0.7).toFixed(2)}
                       </span>
-                      <Bar value={p.aggression} color="var(--red)" width="100%" />
-                    </div>
-                    <div style={{ flex: 1 }}>
+                      <div style={{ flex: 1 }} />
                       <span className="tt-up" style={{ fontSize: 9, color: "var(--ink-3)" }}>
-                        CITE
+                        ⛔ {(p.redlines ?? []).length}
                       </span>
-                      <Bar value={p.citationStrictness} color="var(--green)" width="100%" />
                     </div>
                   </div>
-                  <div className="row gap-2">
-                    {p.beliefs.slice(0, 2).map((b, i) => (
-                      <Chip key={i}>{b}</Chip>
-                    ))}
-                  </div>
+                );
+              })}
+              <div
+                onClick={resetDraft}
+                style={{
+                  border: "1px dashed var(--line-3)",
+                  padding: 14,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--ink-3)",
+                  fontSize: 11,
+                  minHeight: 200,
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontSize: 22, marginBottom: 8 }}>+</div>
+                <div className="tt-up">NEW PERSONA</div>
+                <div style={{ fontSize: 10, marginTop: 4, textAlign: "center" }}>
+                  resets the editor to a blank frame
                 </div>
-              );
-            })}
-            <div
-              onClick={onSave}
-              style={{
-                border: "1px dashed var(--line-3)",
-                padding: 14,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--ink-3)",
-                fontSize: 11,
-                minHeight: 200,
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ fontSize: 22, marginBottom: 8 }}>+</div>
-              <div className="tt-up">ADD PERSONA</div>
-              <div style={{ fontSize: 10, marginTop: 4, textAlign: "center" }}>
-                {apiOnline
-                  ? "saves current designer state"
-                  : "auto-balance suggests:"}
-                {!apiOnline && (
-                  <>
-                    <br />
-                    <span style={{ color: "var(--amber)" }}>
-                      EU diplomat · KR security analyst
-                    </span>
-                  </>
-                )}
               </div>
             </div>
-          </div>
+          )}
         </div>
 
+        {/* Right: editor */}
         <div
           className="col"
           style={{
@@ -465,19 +374,30 @@ export function PersonaDesigner() {
             }}
           >
             <div className="row gap-3" style={{ alignItems: "flex-start" }}>
-              <PersonaAvatar p={sel} size={48} />
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  background: draftColor,
+                  color: "var(--bg-0)",
+                  fontWeight: 700,
+                  fontSize: 22,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {draftInitial}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{ fontSize: 16, color: "var(--ink-0)", fontWeight: 600 }}
-                >
-                  {sel.name}
+                <div style={{ fontSize: 16, color: "var(--ink-0)", fontWeight: 600 }}>
+                  {draftFrame.trim() || "untitled frame"}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--ink-1)" }}>{sel.role}</div>
                 <div
                   className="tt-up"
-                  style={{ fontSize: 9, color: sel.colorVar, marginTop: 4 }}
+                  style={{ fontSize: 9, color: draftColor, marginTop: 4 }}
                 >
-                  {sel.flag} {sel.country}
+                  {savedSel ? "editing" : "new"} · {draftModel}
                 </div>
               </div>
             </div>
@@ -493,7 +413,7 @@ export function PersonaDesigner() {
             <input
               value={draftFrame}
               onChange={(e) => setDraftFrame(e.target.value)}
-              placeholder="e.g. skeptical regulator"
+              placeholder="e.g. skeptical empiricist"
               style={{
                 background: "var(--bg-0)",
                 border: "1px solid var(--line-1)",
@@ -599,79 +519,6 @@ export function PersonaDesigner() {
                 </option>
               ))}
             </select>
-            <Btn
-              primary
-              style={{ marginTop: 10 }}
-              onClick={onSave}
-              disabled={saveDisabled}
-            >
-              {isSaving
-                ? "SAVING…"
-                : savedSel
-                  ? "UPDATE PERSONA"
-                  : "SAVE PERSONA"}
-            </Btn>
-            {!apiOnline && (
-              <div style={{ marginTop: 6 }}>
-                <Chip tone="amber">offline · save disabled</Chip>
-              </div>
-            )}
-          </div>
-
-          <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
-            <div
-              className="tt-up"
-              style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 8 }}
-            >
-              SYSTEM PROMPT · 1.4k tok
-            </div>
-            <div
-              style={{
-                background: "var(--bg-0)",
-                padding: 10,
-                fontSize: 10,
-                fontFamily: "JetBrains Mono",
-                color: "var(--ink-1)",
-                lineHeight: 1.5,
-                border: "1px solid var(--line-1)",
-                maxHeight: 150,
-                overflowY: "auto",
-              }}
-            >
-              You are <span style={{ color: sel.colorVar }}>{sel.name}</span>, {sel.role}. Speak
-              from this position with the tone, priorities, and constraints the role implies.
-              Reference your stated beliefs. When you cite, prefer primary sources from your
-              nation/institution. You may reference the shared world state but must hold your own
-              institutional memory. Constitution: {sel.redlines.length} red-line
-              {sel.redlines.length === 1 ? "" : "s"} enforced.
-            </div>
-            <Btn ghost style={{ marginTop: 8 }}>
-              EDIT PROMPT
-            </Btn>
-          </div>
-
-          <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
-            <div
-              className="tt-up"
-              style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 8 }}
-            >
-              BELIEFS
-            </div>
-            {sel.beliefs.map((b, i) => (
-              <div
-                key={i}
-                style={{
-                  padding: "4px 0",
-                  fontSize: 11,
-                  color: "var(--ink-1)",
-                  display: "flex",
-                  gap: 6,
-                }}
-              >
-                <span style={{ color: sel.colorVar }}>·</span>
-                <span style={{ flex: 1 }}>{b}</span>
-              </div>
-            ))}
           </div>
 
           <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
@@ -684,7 +531,7 @@ export function PersonaDesigner() {
             <textarea
               value={draftRedlines}
               onChange={(e) => setDraftRedlines(e.target.value)}
-              placeholder="one redline per line — lines this persona refuses to cross"
+              placeholder="one redline per line — claims this persona refuses to make"
               rows={4}
               style={{
                 background: "var(--bg-0)",
@@ -699,109 +546,45 @@ export function PersonaDesigner() {
               }}
             />
             <div className="muted" style={{ fontSize: 9, marginTop: 4 }}>
-              {draftRedlines
-                .split("\n")
-                .map((s) => s.trim())
-                .filter(Boolean).length}{" "}
-              redline(s) · one per line
+              {redlineCount} redline(s) · one per line
             </div>
           </div>
 
-          <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
+          <div style={{ padding: 14 }}>
             <div
               className="tt-up"
               style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 8 }}
             >
               TUNING
             </div>
-            <div style={{ padding: "5px 0" }}>
-              <div
-                className="row gap-2"
-                style={{ alignItems: "center" }}
+            <div className="row gap-2" style={{ alignItems: "center", padding: "5px 0" }}>
+              <span
+                className="tt-up"
+                style={{ fontSize: 9, color: "var(--ink-2)", minWidth: 110 }}
               >
-                <span
-                  className="tt-up"
-                  style={{ fontSize: 9, color: "var(--ink-2)", minWidth: 110 }}
-                >
-                  Temperature
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={draftTemperature}
-                  onChange={(e) =>
-                    setDraftTemperature(Number(e.target.value))
-                  }
-                  style={{ flex: 1, accentColor: sel.colorVar }}
-                />
-                <span
-                  className="tab"
-                  style={{
-                    fontSize: 10,
-                    color: "var(--ink-1)",
-                    minWidth: 32,
-                    textAlign: "right",
-                  }}
-                >
-                  {draftTemperature.toFixed(2)}
-                </span>
-              </div>
-            </div>
-            <SliderRow label="Aggression" value={sel.aggression} color="var(--red)" />
-            <SliderRow
-              label="Citation strict."
-              value={sel.citationStrictness}
-              color="var(--green)"
-            />
-          </div>
-
-          <div style={{ padding: 14, borderBottom: "1px solid var(--line-2)" }}>
-            <div
-              className="tt-up"
-              style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 8 }}
-            >
-              TOOL ACCESS
-            </div>
-            {(
-              [
-                ["kg.search", true],
-                ["kg.path", true],
-                ["search.web", true],
-                ["memory.read", true],
-                ["memory.write", true],
-                ["summon.persona", false],
-              ] as const
-            ).map(([t, on], i) => (
-              <div
-                key={i}
+                Temperature
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={draftTemperature}
+                onChange={(e) => setDraftTemperature(Number(e.target.value))}
+                style={{ flex: 1, accentColor: draftColor }}
+              />
+              <span
+                className="tab"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "3px 0",
-                  fontSize: 11,
+                  fontSize: 10,
+                  color: "var(--ink-1)",
+                  minWidth: 32,
+                  textAlign: "right",
                 }}
               >
-                <span style={{ color: on ? "var(--green)" : "var(--ink-3)" }}>
-                  {on ? "■" : "□"}
-                </span>
-                <span style={{ color: on ? "var(--ink-0)" : "var(--ink-3)" }}>{t}</span>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ padding: 14 }}>
-            <div
-              className="tt-up"
-              style={{ fontSize: 9, color: "var(--ink-2)", marginBottom: 6 }}
-            >
-              MEMORY · {sel.memorySize}
+                {draftTemperature.toFixed(2)}
+              </span>
             </div>
-            <KV k="Persistence" v="across-debate" />
-            <KV k="Embeddings" v="text-3-large" />
-            <KV k="Decay" v="exp(−t/30d)" />
           </div>
         </div>
       </div>

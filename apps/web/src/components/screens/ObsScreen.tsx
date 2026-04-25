@@ -214,63 +214,6 @@ export function ObsScreen() {
           </Panel>
 
           <Panel
-            id="W"
-            title="Workflows"
-            sub="temporal · running"
-            right={<Chip tone="amber">demo</Chip>}
-          >
-            <div style={{ padding: 14, fontFamily: "JetBrains Mono", fontSize: 10, lineHeight: 1.7 }}>
-              <div>
-                <span className="green">▸</span> deliberation_v3 · d-2026-04-25-01 · turn 13/14 · running 1m 34s
-              </div>
-              <div>
-                <span className="amber">▸</span> ingest_loop · running 14h 22m · 14k events
-              </div>
-              <div>
-                <span className="amber">▸</span> kg_writer · running 14h 22m · queue 3
-              </div>
-              <div>
-                <span className="green">✓</span> deliberation_v3 · d-2026-04-24-04 · 1m 41s
-              </div>
-              <div>
-                <span className="green">✓</span> deliberation_v3 · d-2026-04-24-02 · 2m 08s
-              </div>
-              <div>
-                <span className="red">✗</span> ingest_planet · 3 retries exceeded · 8h 42m ago
-              </div>
-              <div>
-                <span className="green">✓</span> eval_consensus_quality · 47 debates · 4m 12s
-              </div>
-            </div>
-          </Panel>
-
-          <Panel
-            id="P"
-            title="Prompt Diffs"
-            sub="auto-tuning history"
-            right={<Chip tone="amber">demo</Chip>}
-          >
-            <div style={{ padding: 14, fontFamily: "JetBrains Mono", fontSize: 10, lineHeight: 1.7 }}>
-              <div>
-                <span className="muted">2026-04-24 18:02</span> · <span className="green">+0.04</span>{" "}
-                consensus quality · orchestrator.cast_personas · v.42
-              </div>
-              <div>
-                <span className="muted">2026-04-23 09:14</span> · <span className="green">+0.02</span>{" "}
-                citation rate · persona.synthesize · v.31
-              </div>
-              <div>
-                <span className="muted">2026-04-22 22:48</span> · <span className="red">−0.01</span> rolled
-                back · persona.challenge · v.18
-              </div>
-              <div>
-                <span className="muted">2026-04-21 11:30</span> · <span className="green">+0.06</span>{" "}
-                minority capture · synthesizer · v.27
-              </div>
-            </div>
-          </Panel>
-
-          <Panel
             id="E"
             title="Evals"
             sub={

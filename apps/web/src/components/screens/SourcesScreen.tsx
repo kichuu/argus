@@ -12,8 +12,31 @@ import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sparkline } from "@/components/ui/Sparkline";
-import { api, type SourceIngestResponse } from "@/lib/api";
-import { ARGUS_DATA } from "@/mock/data";
+import { api, type SourceIngestResponse, type SourceSummary } from "@/lib/api";
+
+type LooseSource = SourceSummary & {
+  status?: string;
+  latency?: number;
+  errorRate?: number;
+  lastUpdate?: string;
+  quality?: number;
+  coverage?: string;
+  publisher?: string | null;
+  trust_tier?: number | null;
+  created_at?: string;
+  ingested_at?: string;
+};
+
+function formatTimeAgo(value?: string): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  const diff = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return `${Math.floor(diff / 86400)}d`;
+}
 
 export function SourcesScreen() {
   const queryClient = useQueryClient();
@@ -35,8 +58,8 @@ export function SourcesScreen() {
   const [modalOpen, setModalOpen] = useState(false);
   const [lastIngest, setLastIngest] = useState<SourceIngestResponse | null>(null);
 
-  const sources = remote.data && remote.data.length > 0 ? null : ARGUS_DATA.SOURCES;
-  const apiOnline = remote.isSuccess && (remote.data?.length ?? 0) > 0;
+  const sources = (remote.data ?? []) as LooseSource[];
+  const apiOnline = remote.isSuccess && sources.length > 0;
 
   async function handleIngested(result: SourceIngestResponse) {
     setLastIngest(result);
@@ -61,14 +84,12 @@ export function SourcesScreen() {
       <ScreenHeader
         code="11·SOURCES"
         title="Source Monitor"
-        breadcrumb={`// ${apiOnline ? remote.data!.length : ARGUS_DATA.SOURCES.length} sources · ${apiOnline ? "live" : "mock"}`}
+        breadcrumb={`// ${sources.length} sources · ${apiOnline ? "live" : remote.isLoading ? "loading…" : "offline"}`}
         right={
           <div className="row gap-2">
             <Btn ghost onClick={() => setModalOpen(true)}>
               + INGEST URL
             </Btn>
-            <Btn ghost>↗ MANUAL INGEST</Btn>
-            <Btn primary>RETRY ALL</Btn>
           </div>
         }
       />
@@ -105,77 +126,66 @@ export function SourcesScreen() {
           )}
           {remote.isLoading ? (
             <Skeleton rows={6} rowHeight={64} gap={10} style={{ padding: 0 }} />
-          ) : (sources ?? ARGUS_DATA.SOURCES).length === 0 ? (
+          ) : sources.length === 0 ? (
             <EmptyState
               title="No sources ingested yet"
               hint="Click + INGEST URL above to add a source"
               cta={{ label: "+ INGEST URL", onClick: () => setModalOpen(true) }}
             />
           ) : (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-              gap: 10,
-              overflowY: "auto",
-              paddingRight: 4,
-            }}
-          >
-            {(sources ?? ARGUS_DATA.SOURCES).map((s) => {
-              const tone = s.status === "down" ? "red" : s.status === "warn" ? "amber" : "green";
-              return (
-                <div
-                  key={s.id}
-                  className="panel"
-                  style={{
-                    padding: 12,
-                    borderColor:
-                      tone === "red"
-                        ? "var(--red-dim)"
-                        : tone === "amber"
-                          ? "var(--amber-dim)"
-                          : "var(--line-2)",
-                  }}
-                >
-                  <div className="row gap-2" style={{ alignItems: "center", marginBottom: 6 }}>
-                    <Dot tone={tone} pulse={tone !== "green"} />
-                    <span style={{ fontSize: 12, color: "var(--ink-0)", fontWeight: 600 }}>
-                      {s.name}
-                    </span>
-                    <div style={{ flex: 1 }} />
-                    <Chip>{s.type}</Chip>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                gap: 10,
+                overflowY: "auto",
+                paddingRight: 4,
+              }}
+            >
+              {sources.map((s) => {
+                const status = s.status ?? "ok";
+                const tone = status === "down" ? "red" : status === "warn" ? "amber" : "green";
+                const display = s.name ?? s.id;
+                return (
+                  <div
+                    key={s.id}
+                    className="panel"
+                    style={{
+                      padding: 12,
+                      borderColor:
+                        tone === "red"
+                          ? "var(--red-dim)"
+                          : tone === "amber"
+                            ? "var(--amber-dim)"
+                            : "var(--line-2)",
+                    }}
+                  >
+                    <div className="row gap-2" style={{ alignItems: "center", marginBottom: 6 }}>
+                      <Dot tone={tone} pulse={tone !== "green"} />
+                      <span style={{ fontSize: 12, color: "var(--ink-0)", fontWeight: 600 }}>
+                        {display}
+                      </span>
+                      <div style={{ flex: 1 }} />
+                      {s.type && <Chip>{s.type}</Chip>}
+                    </div>
+                    <KV
+                      k="Status"
+                      v={status.toUpperCase()}
+                      vColor={
+                        tone === "red"
+                          ? "var(--red)"
+                          : tone === "amber"
+                            ? "var(--amber)"
+                            : "var(--green)"
+                      }
+                    />
+                    {s.publisher && <KV k="Publisher" v={s.publisher} />}
+                    {s.trust_tier != null && <KV k="Trust tier" v={String(s.trust_tier)} />}
+                    <KV k="Last update" v={formatTimeAgo(s.created_at ?? s.ingested_at)} />
                   </div>
-                  <KV
-                    k="Status"
-                    v={s.status.toUpperCase()}
-                    vColor={
-                      tone === "red"
-                        ? "var(--red)"
-                        : tone === "amber"
-                          ? "var(--amber)"
-                          : "var(--green)"
-                    }
-                  />
-                  <KV k="Latency" v={s.status === "down" ? "—" : `${s.latency}s`} />
-                  <KV
-                    k="Error rate"
-                    v={s.status === "down" ? "100%" : `${(s.errorRate * 100).toFixed(2)}%`}
-                  />
-                  <KV k="Last update" v={`−${s.lastUpdate}`} />
-                  <KV k="Quality" v={s.status === "down" ? "—" : s.quality.toFixed(2)} />
-                  <KV k="Coverage" v={s.coverage} />
-                  <div className="row gap-2" style={{ marginTop: 8 }}>
-                    <Btn ghost style={{ flex: 1, fontSize: 9, padding: "3px 6px" }}>
-                      {s.status === "down" ? "RETRY" : "PAUSE"}
-                    </Btn>
-                    <Btn ghost style={{ flex: 1, fontSize: 9, padding: "3px 6px" }}>
-                      LOGS
-                    </Btn>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
           )}
         </div>
         <div
@@ -190,10 +200,7 @@ export function SourcesScreen() {
             const statsLive = stats.isSuccess && !!stats.data;
             const s = stats.data;
             const eventsPerHr = statsLive ? s!.events_per_hour_24h : null;
-            const sparkData =
-              statsLive && s!.spark_24h.length > 0
-                ? s!.spark_24h
-                : [1.2, 1.4, 1.6, 1.5, 1.8, 2.1, 2.4, 2.8, 3.0, 3.2, 3.4, 3.4];
+            const sparkData = statsLive ? s!.spark_24h : [];
             const total = statsLive ? s!.total : null;
             const last24h = statsLive ? s!.last_24h : null;
             const topPub = statsLive ? s!.by_publisher_top10[0] ?? null : null;
@@ -218,15 +225,19 @@ export function SourcesScreen() {
                         className="tab"
                         style={{ fontSize: 22, color: "var(--amber)", fontWeight: 600 }}
                       >
-                        {eventsPerHr != null ? eventsPerHr.toFixed(2) : "3,418"}
+                        {eventsPerHr != null ? eventsPerHr.toFixed(2) : "—"}
                       </div>
-                      <Sparkline data={sparkData} width={140} height={24} />
+                      {sparkData.length > 0 ? (
+                        <Sparkline data={sparkData} width={140} height={24} />
+                      ) : (
+                        <div style={{ height: 24 }} />
+                      )}
                     </div>
                   </div>
                   <div style={{ marginTop: 14 }}>
                     <KV
                       k="Total ingested"
-                      v={total != null ? total.toLocaleString() : "2.41M"}
+                      v={total != null ? total.toLocaleString() : "—"}
                     />
                     <KV
                       k="Last 24h"
@@ -245,35 +256,11 @@ export function SourcesScreen() {
                       }
                       vColor={tier1Share != null ? "var(--green)" : undefined}
                     />
-                    <KV k="Avg latency p95" v={<span className="muted">— demo</span>} />
                   </div>
                 </div>
               </Panel>
             );
           })()}
-          <Panel
-            id="MAP"
-            title="Coverage Map"
-            right={<Chip tone="amber">demo</Chip>}
-          >
-            <div style={{ padding: 14, fontSize: 10, color: "var(--ink-1)" }}>
-              <div style={{ marginBottom: 4 }}>
-                Indo-Pacific <span className="amber">▰▰▰▰▰▰▰▰▱▱</span> 81%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                EU/UK <span className="amber">▰▰▰▰▰▰▰▱▱▱</span> 72%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                Americas <span className="amber">▰▰▰▰▰▰▱▱▱▱</span> 64%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                MENA <span className="amber">▰▰▰▰▱▱▱▱▱▱</span> 41%
-              </div>
-              <div style={{ marginBottom: 4 }}>
-                Sub-Sah Africa <span className="amber">▰▰▰▱▱▱▱▱▱▱</span> 28%
-              </div>
-            </div>
-          </Panel>
         </div>
       </div>
       <AddSourceModal

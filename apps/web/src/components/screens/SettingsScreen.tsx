@@ -120,18 +120,6 @@ export function SettingsScreen() {
             </div>
           </Panel>
 
-          <Panel id="C" title="Persona Templates" style={{ marginTop: 16 }}>
-            <div style={{ padding: 16, fontSize: 11, color: "var(--ink-1)" }}>
-              <div className="row gap-2" style={{ alignItems: "center", marginBottom: 8 }}>
-                <span>42 templates · 18 official · 24 user · 7 starred</span>
-                <Chip tone="amber">demo</Chip>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <Btn ghost>OPEN LIBRARY →</Btn>
-              </div>
-            </div>
-          </Panel>
-
           <Panel id="D" title="Vertical" style={{ marginTop: 16 }}>
             <div style={{ padding: 16, fontSize: 11, color: "var(--ink-1)" }}>
               <div className="row gap-2" style={{ alignItems: "center", marginBottom: 6 }}>

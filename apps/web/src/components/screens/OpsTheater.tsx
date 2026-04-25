@@ -12,10 +12,26 @@ import { PersonaAvatar } from "@/components/ui/PersonaAvatar";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Sparkline } from "@/components/ui/Sparkline";
-import { api, type DiscussionMessage } from "@/lib/api";
-import { ARGUS_DATA } from "@/mock/data";
+import { api, type DiscussionMessage, type PersonaSummary } from "@/lib/api";
 import type { OrchestrationNode } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
+
+const _PALETTE = [
+  "var(--p-1)",
+  "var(--p-2)",
+  "var(--p-3)",
+  "var(--p-4)",
+  "var(--p-5)",
+  "var(--p-6)",
+  "var(--p-7)",
+];
+
+function colorForFrame(frame: string): string {
+  if (!frame) return "var(--ink-2)";
+  let h = 0;
+  for (let i = 0; i < frame.length; i++) h = (h + frame.charCodeAt(i)) | 0;
+  return _PALETTE[Math.abs(h) % _PALETTE.length];
+}
 
 const STATE_COLOR: Record<string, string> = {
   idle: "var(--ink-3)",
@@ -147,11 +163,33 @@ function buildLiveOrchestration(
 
 export function OpsTheater() {
   const router = useRouter();
-  const D = ARGUS_DATA;
   const [tick, setTick] = useState(0);
   const [paused, setPaused] = useState(false);
   const discussionId = useDebateStore((s) => s.discussionId);
   const topic = useDebateStore((s) => s.topic);
+
+  const personasQuery = useQuery({
+    queryKey: ["personas"],
+    queryFn: api.personas,
+    retry: 0,
+    staleTime: 60_000,
+  });
+
+  const activityQuery = useQuery({
+    queryKey: ["activity-tape"],
+    queryFn: () => api.activity({ limit: 8 }),
+    retry: 0,
+    refetchInterval: 5_000,
+    staleTime: 5_000,
+  });
+
+  const metricsQuery = useQuery({
+    queryKey: ["metrics-overview-ops"],
+    queryFn: api.metricsOverview,
+    retry: 0,
+    refetchInterval: 15_000,
+    staleTime: 15_000,
+  });
 
   const liveDiscussion = useQuery({
     queryKey: ["discussion", discussionId],

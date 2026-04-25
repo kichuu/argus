@@ -151,7 +151,7 @@ export function HomeScreen() {
       .slice(0, 3);
     for (const c of claims) {
       const text =
-        c.text ?? [c.subject, c.predicate, c.object].filter(Boolean).join(" ") || c.id;
+        (c.text ?? [c.subject, c.predicate, c.object].filter(Boolean).join(" ")) || c.id;
       rows.push({
         key: `c-${c.id}`,
         kind: "claim",
