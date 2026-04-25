@@ -215,15 +215,38 @@ export function OpsTheater() {
     return () => clearInterval(id);
   }, [paused]);
 
-  const personaActivity = D.PERSONAS.map((p, i) => {
-    const pid = p.id === "indopacom" ? "indo" : p.id;
-    const node = D.ORCHESTRATION.find((o) => o.id === `p-${pid}`);
-    return {
-      p,
-      cpu: 30 + ((tick + i * 3) % 70),
-      tokens: 1240 + ((tick * 7 + i * 100) % 800),
-      state: node?.state ?? "idle",
-    };
+  // Build per-persona activity from real saved personas + live message stream.
+  // A persona is "speaking" if its persona_id was the most recent message author
+  // within the last 30s; "running" if it has any message; "idle" otherwise.
+  const livePersonas: PersonaSummary[] = personasQuery.data ?? [];
+  const messagesByPersona = new Map<string, DiscussionMessage[]>();
+  let lastPersonaMsgId: string | null = null;
+  let lastPersonaMsgTs = -Infinity;
+  for (const m of liveMessages.data ?? []) {
+    const pid = m.persona_id;
+    if (!pid) continue;
+    const arr = messagesByPersona.get(pid) ?? [];
+    arr.push(m);
+    messagesByPersona.set(pid, arr);
+    const t = m.created_at ? Date.parse(m.created_at) : NaN;
+    if (Number.isFinite(t) && t > lastPersonaMsgTs) {
+      lastPersonaMsgTs = t;
+      lastPersonaMsgId = pid;
+    }
+  }
+  void tick; // re-render every 600ms so "speaking" decays to "running" after 30s
+  const nowForActivity = Date.now();
+  const personaActivity = livePersonas.map((p) => {
+    const msgs = messagesByPersona.get(p.id) ?? [];
+    const tokens = msgs.reduce((acc, m) => acc + Math.ceil((m.content?.length ?? 0) / 4), 0);
+    const isMostRecent =
+      lastPersonaMsgId === p.id && nowForActivity - lastPersonaMsgTs <= 30_000;
+    const state: "idle" | "speaking" | "running" = isMostRecent
+      ? "speaking"
+      : msgs.length > 0
+        ? "running"
+        : "idle";
+    return { p, msgCount: msgs.length, tokens, state };
   });
 
   const isLive = !!discussionId;
@@ -233,22 +256,15 @@ export function OpsTheater() {
   const liveStatus = liveDiscussion.data?.status;
   const liveTopic = liveDiscussion.data?.topic ?? topic;
 
-  // Derive the orchestration node graph from the live message stream when we
-  // have one; otherwise fall back to the mock animation. The fallback covers
-  // (a) no discussion launched yet and (b) a launched discussion with zero
-  // messages so far.
-  const useDerived = isLive && liveMsgCount > 0;
-  // Recompute `nowMs` on every tick so the live age readout under the active
-  // node refreshes between polls. We read `tick` to thread a dep through; the
-  // value itself isn't used.
-  void tick;
+  // Always derive the orchestration node graph from the live message stream.
+  // When no messages exist yet (or no discussion launched), this returns 5
+  // nodes all in "idle" state — accurate, not faked.
+  const useDerived = true;
   const nowMs = Date.now();
-  const { nodes: derivedNodes, activeAgeMsByNode } = useDerived
-    ? buildLiveOrchestration(liveMessages.data ?? [], nowMs)
-    : { nodes: [] as OrchestrationNode[], activeAgeMsByNode: {} };
-  const orchestrationNodes: OrchestrationNode[] = useDerived
-    ? derivedNodes
-    : D.ORCHESTRATION;
+  const { nodes: orchestrationNodes, activeAgeMsByNode } = buildLiveOrchestration(
+    liveMessages.data ?? [],
+    nowMs,
+  );
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
@@ -260,7 +276,7 @@ export function OpsTheater() {
             ? `// run ${discussionId} · ${(liveTopic || "live").slice(0, 60)}${
                 liveStatus ? ` · ${liveStatus}` : ""
               }`
-            : "// run d-2026-04-25-01 · Taiwan Strait quarantine · 7 personas"
+            : `// no debate launched · ${livePersonas.length} persona(s) on file`
         }
         right={
           <div className="row gap-2" style={{ alignItems: "center" }}>
@@ -320,7 +336,7 @@ export function OpsTheater() {
                 fontSize="9"
                 fill="var(--ink-3)"
               >
-                PERSONAS · 7
+                PERSONAS · {livePersonas.length}
               </text>
               <text
                 x={W * 0.88 - 38}
@@ -489,26 +505,32 @@ export function OpsTheater() {
                   fontFamily: "JetBrains Mono",
                 }}
               >
-                <div>
-                  <span className="tab muted">14:22:08.412</span>{" "}
-                  <span className="green">orchestrator</span> &gt; cast 7 personas; depth=deep;
-                  turn-limit=14
-                </div>
-                <div>
-                  <span className="tab muted">14:22:08.821</span>{" "}
-                  <span className="amber">p-indopacom</span> &gt; tool_call(kg.path(&quot;us&quot;,&quot;tw&quot;)) → 4 paths
-                </div>
-                <div>
-                  <span className="tab muted">14:22:09.114</span>{" "}
-                  <span className="cyan">p-analyst</span> &gt; memory_write key=&quot;quarantine.prob&quot; val=0.42
-                </div>
+                {(activityQuery.data?.events ?? []).slice(0, 3).map((ev) => {
+                  const ts = ev.ts ? new Date(ev.ts) : null;
+                  const tsStr = ts ? ts.toISOString().slice(11, 23) : "—";
+                  const tone =
+                    ev.kind === "claim"
+                      ? "green"
+                      : ev.kind === "discussion"
+                        ? "amber"
+                        : "cyan";
+                  return (
+                    <div key={ev.id}>
+                      <span className="tab muted">{tsStr}</span>{" "}
+                      <span className={tone}>{ev.kind}</span> &gt; {ev.title.slice(0, 80)}
+                    </div>
+                  );
+                })}
+                {(activityQuery.data?.events ?? []).length === 0 && (
+                  <div className="muted">no recent events</div>
+                )}
               </div>
             </div>
           </div>
         </div>
 
         <div className="col" style={{ width: 360, overflow: "hidden" }}>
-          <Panel id="R1" title="Resource Meter" sub="last 60s" style={{ flexShrink: 0 }}>
+          <Panel id="R1" title="Resource Meter" sub="24h · live" style={{ flexShrink: 0 }}>
             <div
               style={{
                 padding: 14,
@@ -519,75 +541,75 @@ export function OpsTheater() {
             >
               <div>
                 <div className="tt-up muted" style={{ fontSize: 9 }}>
-                  TOK / MIN
+                  TOK 24H
                 </div>
                 <div
                   className="tab"
                   style={{ fontSize: 22, color: "var(--amber)", fontWeight: 600 }}
                 >
-                  14,281
+                  {metricsQuery.data
+                    ? metricsQuery.data.tok_24h_est >= 1_000_000
+                      ? `${(metricsQuery.data.tok_24h_est / 1_000_000).toFixed(2)}M`
+                      : metricsQuery.data.tok_24h_est >= 1000
+                        ? `${(metricsQuery.data.tok_24h_est / 1000).toFixed(1)}k`
+                        : String(metricsQuery.data.tok_24h_est)
+                    : "—"}
                 </div>
-                <Sparkline
-                  data={[8, 12, 9, 14, 18, 16, 22, 19, 25, 21, 24, 28, 26, 24, 22, 28, 31, 28]}
-                  width={140}
-                  height={24}
-                />
+                {metricsQuery.data?.spark_claims && (
+                  <Sparkline
+                    data={metricsQuery.data.spark_claims}
+                    width={140}
+                    height={24}
+                  />
+                )}
               </div>
               <div>
                 <div className="tt-up muted" style={{ fontSize: 9 }}>
-                  COST / RUN
+                  COST 24H
                 </div>
                 <div
                   className="tab"
                   style={{ fontSize: 22, color: "var(--ink-0)", fontWeight: 600 }}
                 >
-                  $0.31
+                  {metricsQuery.data
+                    ? `$${metricsQuery.data.cost_24h_est_usd.toFixed(2)}`
+                    : "—"}
                 </div>
-                <Sparkline
-                  data={[2, 3, 2, 4, 5, 4, 6, 5, 7, 6, 7, 8, 7, 7, 6, 8, 9, 8]}
-                  width={140}
-                  height={24}
-                  color="var(--green)"
-                />
+                {metricsQuery.data?.spark_cost && (
+                  <Sparkline
+                    data={metricsQuery.data.spark_cost}
+                    width={140}
+                    height={24}
+                    color="var(--green)"
+                  />
+                )}
               </div>
               <div>
                 <div className="tt-up muted" style={{ fontSize: 9 }}>
-                  QUEUE
+                  DEBATES 24H
                 </div>
                 <div className="tab" style={{ fontSize: 14, color: "var(--ink-0)" }}>
-                  3 / 16
+                  {metricsQuery.data?.debates_24h ?? "—"}
                 </div>
               </div>
               <div>
                 <div className="tt-up muted" style={{ fontSize: 9 }}>
-                  ERRORS 1H
+                  ERR RATE
                 </div>
-                <div className="tab" style={{ fontSize: 14, color: "var(--green)" }}>
-                  0
+                <div
+                  className="tab"
+                  style={{
+                    fontSize: 14,
+                    color:
+                      (metricsQuery.data?.err_rate ?? 0) > 0.05
+                        ? "var(--red)"
+                        : "var(--green)",
+                  }}
+                >
+                  {metricsQuery.data?.err_rate != null
+                    ? `${(metricsQuery.data.err_rate * 100).toFixed(1)}%`
+                    : "—"}
                 </div>
-              </div>
-            </div>
-            <div style={{ padding: "0 14px 14px" }}>
-              <div className="tt-up muted" style={{ fontSize: 9, marginBottom: 4 }}>
-                MODEL MIX
-              </div>
-              <div style={{ display: "flex", height: 8, border: "1px solid var(--line-2)" }}>
-                <div style={{ width: "42%", background: "var(--p-3)" }} title="Sonnet" />
-                <div style={{ width: "31%", background: "var(--amber)" }} title="Opus" />
-                <div style={{ width: "27%", background: "var(--p-2)" }} title="Haiku" />
-              </div>
-              <div
-                className="row"
-                style={{
-                  fontSize: 9,
-                  marginTop: 4,
-                  color: "var(--ink-2)",
-                  justifyContent: "space-between",
-                }}
-              >
-                <span>SONNET 42%</span>
-                <span>OPUS 31%</span>
-                <span>HAIKU 27%</span>
               </div>
             </div>
           </Panel>
@@ -621,70 +643,142 @@ export function OpsTheater() {
                   style={{ margin: 12 }}
                 />
               ) : (
-                (liveMessages.data ?? []).slice(-12).map((m, i) => (
-                  <div
-                    key={(m.id as string | undefined) ?? i}
-                    style={{
-                      padding: "8px 12px",
-                      borderBottom: "1px solid var(--line-1)",
-                      fontSize: 10,
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    <div className="row gap-2" style={{ alignItems: "baseline" }}>
-                      <span className="amber tt-up" style={{ fontSize: 9 }}>
-                        {m.persona_id ?? m.agent_id ?? m.role ?? "agent"}
-                      </span>
-                      <span className="tab muted" style={{ fontSize: 9 }}>
-                        {m.created_at?.slice(11, 19) ?? ""}
-                      </span>
+                (liveMessages.data ?? []).slice(-12).map((m, i) => {
+                  // Resolve persona UUIDs to their human-readable frame name.
+                  const personaMatch = m.persona_id
+                    ? livePersonas.find((p) => p.id === m.persona_id)
+                    : null;
+                  const label = personaMatch
+                    ? personaMatch.frame
+                    : m.role && m.role !== "persona"
+                      ? m.role
+                      : m.agent_id ?? "agent";
+                  const labelColor = personaMatch
+                    ? personaMatch.color || colorForFrame(personaMatch.frame)
+                    : "var(--amber)";
+                  return (
+                    <div
+                      key={(m.id as string | undefined) ?? i}
+                      style={{
+                        padding: "8px 12px",
+                        borderBottom: "1px solid var(--line-1)",
+                        fontSize: 10,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      <div className="row gap-2" style={{ alignItems: "baseline" }}>
+                        <span
+                          className="tt-up"
+                          style={{
+                            fontSize: 9,
+                            color: labelColor,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            maxWidth: 220,
+                          }}
+                        >
+                          {label}
+                        </span>
+                        <span className="tab muted" style={{ fontSize: 9 }}>
+                          {m.created_at?.slice(11, 19) ?? ""}
+                        </span>
+                      </div>
+                      <div style={{ color: "var(--ink-1)", marginTop: 2 }}>
+                        {(m.content ?? "").slice(0, 180)}
+                      </div>
                     </div>
-                    <div style={{ color: "var(--ink-1)", marginTop: 2 }}>
-                      {(m.content ?? "").slice(0, 180)}
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </Panel>
 
-          <Panel id="R2" title="Persona Activity" sub="live · thought / tool / speak" style={{ flex: 1 }}>
+          <Panel
+            id="R2"
+            title="Persona Activity"
+            sub={`${personaActivity.length} on file · derived from messages`}
+            style={{ flex: 1 }}
+          >
             <div className="col" style={{ overflowY: "auto" }}>
-              {personaActivity.map(({ p, cpu, tokens, state }) => (
-                <div
-                  key={p.id}
-                  style={{
-                    padding: "10px 12px",
-                    borderBottom: "1px solid var(--line-1)",
+              {personaActivity.length === 0 ? (
+                <EmptyState
+                  title="No personas saved"
+                  hint="Create personas in the Persona Designer — the master agent will cast them."
+                  cta={{
+                    label: "OPEN DESIGNER",
+                    onClick: () => router.push("/personas"),
                   }}
-                >
-                  <div className="row gap-2" style={{ alignItems: "center" }}>
-                    <PersonaAvatar p={p} size={20} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 11, color: "var(--ink-0)" }}>{p.name}</div>
-                      <div style={{ fontSize: 9, color: "var(--ink-2)" }}>{p.model}</div>
-                    </div>
-                    <span
-                      className="tt-up"
-                      style={{ fontSize: 9, color: STATE_COLOR[state] }}
+                  style={{ margin: 12 }}
+                />
+              ) : (
+                personaActivity.map(({ p, msgCount, tokens, state }) => {
+                  const color = p.color || colorForFrame(p.frame);
+                  const initial = p.frame.charAt(0).toUpperCase() || "·";
+                  return (
+                    <div
+                      key={p.id}
+                      style={{
+                        padding: "10px 12px",
+                        borderBottom: "1px solid var(--line-1)",
+                      }}
                     >
-                      {state === "idle"
-                        ? "○ idle"
-                        : state === "thinking"
-                          ? "◐ think"
-                          : state === "tool-call"
-                            ? "▸ tool"
-                            : "◉ speak"}
-                    </span>
-                  </div>
-                  <div className="row gap-2" style={{ marginTop: 6, alignItems: "center" }}>
-                    <Bar value={cpu} max={100} width={140} color={p.colorVar} />
-                    <span className="tab muted" style={{ fontSize: 9 }}>
-                      {tokens} tok
-                    </span>
-                  </div>
-                </div>
-              ))}
+                      <div className="row gap-2" style={{ alignItems: "center" }}>
+                        <div
+                          style={{
+                            width: 20,
+                            height: 20,
+                            background: color,
+                            color: "var(--bg-0)",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {initial}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--ink-0)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {p.frame}
+                          </div>
+                          <div style={{ fontSize: 9, color: "var(--ink-2)" }}>
+                            {p.model_assignment ?? "model unset"}
+                          </div>
+                        </div>
+                        <span
+                          className="tt-up"
+                          style={{ fontSize: 9, color: STATE_COLOR[state] }}
+                        >
+                          {state === "idle"
+                            ? "○ idle"
+                            : state === "running"
+                              ? "▸ ran"
+                              : "◉ speak"}
+                        </span>
+                      </div>
+                      <div
+                        className="row gap-2"
+                        style={{ marginTop: 6, alignItems: "center" }}
+                      >
+                        <Bar value={msgCount} max={Math.max(msgCount, 5)} width={140} color={color} />
+                        <span className="tab muted" style={{ fontSize: 9 }}>
+                          {tokens > 0 ? `${tokens} tok` : "0 msg"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </Panel>
         </div>

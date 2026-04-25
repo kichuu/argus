@@ -167,6 +167,7 @@ async def _collect_qdrant_status() -> QdrantStatus:
         client = AsyncQdrantClient(
             url=settings.qdrant_url,
             api_key=settings.qdrant_api_key or None,
+            check_compatibility=False,
         )
         info = await client.get_collection(collection)
         points = getattr(info, "points_count", None)

@@ -93,6 +93,7 @@ export type PersonaSummary = {
   redlines?: string[];
   bias?: string | null;
   model_assignment?: string | null;
+  color?: string | null;
   created_at?: string;
   updated_at?: string;
 };

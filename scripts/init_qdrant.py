@@ -100,6 +100,7 @@ async def _amain() -> int:
     client = AsyncQdrantClient(
         url=settings.qdrant_url,
         api_key=settings.qdrant_api_key or None,
+        check_compatibility=False,
     )
 
     try:

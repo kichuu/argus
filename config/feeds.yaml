@@ -71,6 +71,31 @@ groups:
         disabled: true
         note: "Probe returned 403 on 2026-04-25 (likely Cloudflare bot challenge). May work from a less-flagged egress; keep entry for re-enable."
 
+  - name: markets_and_finance
+    description: Global markets, macro, and India-focused finance — for cross-asset and EM coverage
+    trust_tier: 2
+    feeds:
+      - name: Reuters Markets
+        url: https://www.reutersagency.com/feed/?best-sectors=markets&post_type=best
+        disabled: true
+        note: "Reuters wire feed often gates by UA — re-enable once a working public URL or a NewsAPI bridge is wired."
+      - name: Bloomberg Markets
+        url: https://feeds.bloomberg.com/markets/news.rss
+        disabled: true
+        note: "Bloomberg RSS rarely accepts unauthenticated clients; consider switching to a NewsAPI/GNews bridge filtered to Bloomberg."
+      - name: Financial Times Companies
+        url: https://www.ft.com/companies?format=rss
+        disabled: true
+        note: "FT enforces metering on RSS; re-enable if you have a feed-friendly mirror."
+      - name: Economic Times Markets
+        url: https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms
+      - name: Mint Markets
+        url: https://www.livemint.com/rss/markets
+      - name: Business Standard Markets
+        url: https://www.business-standard.com/rss/markets-106.rss
+      - name: Moneycontrol Markets
+        url: https://www.moneycontrol.com/rss/results.xml
+
 defaults:
   max_items_per_feed: 5
   retry_attempts: 2

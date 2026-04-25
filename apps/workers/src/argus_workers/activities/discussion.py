@@ -1,19 +1,25 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from argus_core.db.models import (
     AgentMessageModel,
     ClaimModel,
     DiscussionRunModel,
+    SourceModel,
 )
 from sqlalchemy import select as _sa_select
 from argus_core.db.session import session_scope
 from argus_core.logging import get_logger
-from argus_core.schemas import DiscussionStatus, EvidenceRef
+from argus_core.schemas import DiscussionStatus, EvidenceRef, Source
 from argus_core.settings import get_settings
+from argus_core.trust import load_trust_config
 from argus_extraction.providers import family_of, get_provider
+from argus_extraction.verifier import heal_span
+from argus_extraction.web_search import WebSearchClient, WebSearchResult
+from argus_ingestion.base import compute_content_hash
 from sqlalchemy import desc, select
 from temporalio import activity
 
@@ -22,6 +28,8 @@ if TYPE_CHECKING:
     from argus_retrieval.types import RetrievedSpan
 
 logger = get_logger(__name__)
+
+_EVIDENCE_PACK_MAX = 30
 
 
 async def _build_hybrid_retriever() -> "HybridRetriever | None":
@@ -131,9 +139,153 @@ async def _baseline_evidence_pack(vertical: str, limit: int = 20) -> list[dict[s
     return pack
 
 
+def _trust_tier_for_url(url: str) -> int:
+    try:
+        host = urlparse(url).hostname or ""
+    except Exception:  # noqa: BLE001
+        return 4
+    if not host:
+        return 4
+    try:
+        return load_trust_config().tier_for_domain(host)
+    except Exception:  # noqa: BLE001
+        return 4
+
+
+async def _persist_web_source(result: WebSearchResult) -> Source | None:
+    """Upsert a SourceModel row for a web-search result.
+
+    Returns a Pydantic Source mirroring the persisted row (whose id we use to
+    build the EvidenceRef). On dedup-by-content-hash we reuse the existing
+    row's id so EvidenceRefs point at the canonical source.
+    """
+    raw_text = result.text or (result.title + ". " + result.snippet).strip()
+    if not raw_text:
+        return None
+    chash = compute_content_hash(raw_text)
+    parsed = urlparse(result.url) if result.url else None
+    publisher = (parsed.hostname or "").removeprefix("www.") if parsed else None
+    trust_tier = _trust_tier_for_url(result.url)
+
+    async with session_scope() as session:
+        existing = await session.execute(
+            select(SourceModel).where(SourceModel.content_hash == chash)
+        )
+        row = existing.scalar_one_or_none()
+        if row is not None:
+            return Source(
+                id=row.id,
+                url=row.url,  # type: ignore[arg-type]
+                feed_url=row.feed_url,  # type: ignore[arg-type]
+                title=row.title,
+                content_hash=row.content_hash,
+                raw_text=row.raw_text,
+                fetched_at=row.fetched_at,
+                published_at=row.published_at,
+                license=row.license,
+                trust_tier=row.trust_tier,
+                publisher=row.publisher,
+                language=row.language,
+            )
+
+        new_id = uuid4()
+        model = SourceModel(
+            id=new_id,
+            url=result.url or None,
+            feed_url=None,
+            title=result.title or (publisher or "web result"),
+            content_hash=chash,
+            raw_text=raw_text,
+            fetched_at=result.fetched_at,
+            published_at=None,
+            license=None,
+            trust_tier=trust_tier,
+            publisher=publisher,
+            language=None,
+        )
+        session.add(model)
+        return Source(
+            id=new_id,
+            url=result.url or None,  # type: ignore[arg-type]
+            title=result.title or (publisher or "web result"),
+            content_hash=chash,
+            raw_text=raw_text,
+            fetched_at=result.fetched_at,
+            trust_tier=trust_tier,
+            publisher=publisher,
+        )
+
+
+def _evidence_for_web_source(source: Source, snippet: str) -> dict[str, Any] | None:
+    """Build an EvidenceRef-shaped dict by locating `snippet` in source.raw_text.
+
+    Falls back to the leading 200 chars of raw_text if the snippet doesn't
+    occur verbatim (defensive against whitespace drift in annotations).
+    """
+    raw = source.raw_text
+    if not raw:
+        return None
+    candidate = snippet.strip() if snippet else ""
+    healed: tuple[int, int] | None = None
+    if candidate:
+        healed = heal_span(source, candidate, 0, len(candidate))
+    if healed is None:
+        # Fall back to first 200 chars of the body — guaranteed verbatim.
+        clip = raw[:200]
+        if not clip:
+            return None
+        candidate = clip
+        healed = (0, len(clip))
+    start, end = healed
+    span_text = raw[start:end]
+    try:
+        ref = EvidenceRef(
+            source_id=source.id,
+            verbatim_span=span_text,
+            char_start=start,
+            char_end=end,
+            fetched_at=source.fetched_at,
+            trust_tier=int(source.trust_tier),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "web_evidence.build_failed",
+            source_id=str(source.id),
+            error=str(exc),
+        )
+        return None
+    return ref.model_dump(mode="json")
+
+
+async def _web_evidence_for_topic(
+    topic: str, max_results: int
+) -> list[dict[str, Any]]:
+    settings = get_settings()
+    client = WebSearchClient(model=settings.default_research_model)
+    results = await client.search(topic, max_results=max_results)
+    pack: list[dict[str, Any]] = []
+    for result in results:
+        try:
+            source = await _persist_web_source(result)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "web_source_persist_failed",
+                url=result.url,
+                error=str(exc),
+            )
+            continue
+        if source is None:
+            continue
+        ev = _evidence_for_web_source(source, result.snippet)
+        if ev is not None:
+            pack.append(ev)
+    return pack
+
+
 @activity.defn
 async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
     did = UUID(discussion_id)
+    settings = get_settings()
     async with session_scope() as session:
         row = await session.get(DiscussionRunModel, did)
         if row is None:
@@ -141,8 +293,21 @@ async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
         topic = row.topic
         vertical = row.vertical
 
-    pack: list[dict[str, Any]] = []
-    source = "baseline"
+    web_evidence: list[dict[str, Any]] = []
+    if settings.web_search_enabled:
+        try:
+            web_evidence = await _web_evidence_for_topic(
+                topic, settings.web_search_max_results
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "assemble_evidence_pack.web_search_failed",
+                discussion_id=discussion_id,
+                error=str(exc),
+            )
+            web_evidence = []
+
+    hybrid_evidence: list[dict[str, Any]] = []
     retriever = await _build_hybrid_retriever()
     if retriever is not None:
         try:
@@ -158,15 +323,25 @@ async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
             spans = []
         for span in spans:
             try:
-                pack.append(_retrieved_span_to_evidence_dict(span))
+                hybrid_evidence.append(_retrieved_span_to_evidence_dict(span))
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "retrieved_span_translation_failed",
                     discussion_id=discussion_id,
                     error=str(e),
                 )
-        if pack:
-            source = "hybrid"
+
+    # Combine: fresh web results first, then ingested hybrid spans.
+    pack = (web_evidence + hybrid_evidence)[:_EVIDENCE_PACK_MAX]
+
+    if web_evidence and hybrid_evidence:
+        source = "hybrid+web"
+    elif web_evidence:
+        source = "web"
+    elif hybrid_evidence:
+        source = "hybrid"
+    else:
+        source = "baseline"
 
     if not pack:
         pack = await _baseline_evidence_pack(vertical)
@@ -184,6 +359,8 @@ async def assemble_evidence_pack(discussion_id: str) -> dict[str, Any]:
         discussion_id=discussion_id,
         evidence_count=len(pack),
         source=source,
+        web_count=len(web_evidence),
+        hybrid_count=len(hybrid_evidence),
     )
     return {
         "discussion_id": discussion_id,

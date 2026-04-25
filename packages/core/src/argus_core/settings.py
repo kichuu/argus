@@ -80,6 +80,12 @@ class Settings(BaseSettings):
     ingest_max_items_per_feed: int = Field(default=3, ge=1, description="Cap per-feed items per scheduled tick")
     ingest_feeds_path: Path = Path("./config/feeds.yaml")
 
+    web_search_enabled: bool = Field(
+        default=True,
+        description="Allow research to query the web before assembling the evidence pack",
+    )
+    web_search_max_results: int = Field(default=5, ge=1, le=20)
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

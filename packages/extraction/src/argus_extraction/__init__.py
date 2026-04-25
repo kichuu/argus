@@ -20,6 +20,7 @@ from argus_extraction.verifier import (
     verify_extraction,
     verify_span,
 )
+from argus_extraction.web_search import WebSearchClient, WebSearchResult
 
 __all__ = [
     "AdversarialVerifier",
@@ -33,6 +34,8 @@ __all__ = [
     "Provider",
     "Verdict",
     "VerificationError",
+    "WebSearchClient",
+    "WebSearchResult",
     "class_of",
     "family_of",
     "get_provider",
