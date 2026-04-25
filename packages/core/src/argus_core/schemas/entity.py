@@ -22,5 +22,7 @@ class Entity(BaseModel):
     wikidata_id: str | None = Field(default=None, description="Wikidata Q-ID, e.g. Q42")
     aliases: list[str] = Field(default_factory=list)
     description: str | None = None
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -21,6 +21,8 @@ def _model_to_schema(row: EntityModel) -> Entity:
             "wikidata_id": row.wikidata_id,
             "aliases": row.aliases or [],
             "description": row.description,
+            "latitude": row.latitude,
+            "longitude": row.longitude,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
         }

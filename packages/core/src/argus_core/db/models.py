@@ -39,6 +39,8 @@ class EntityModel(Base):
     wikidata_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     aliases: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utc_now, onupdate=_utc_now
