@@ -19,25 +19,25 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Council",
     items: [
       { id: "ops", code: "F4", label: "Agent Ops Theater", href: "/ops" },
-      { id: "personas", code: "F5", label: "Persona Designer", href: "/personas" },
-      { id: "debate", code: "F6", label: "Debate Room", href: "/debate" },
-      { id: "synthesis", code: "F7", label: "Synthesis View", href: "/synthesis" },
     ],
   },
   {
     label: "Archive",
     items: [
-      { id: "library", code: "F8", label: "Synthesis Library", href: "/library" },
-      { id: "replay", code: "F9", label: "Replay & Branch", href: "/replay" },
-      { id: "compare", code: "F10", label: "Compare Mode", href: "/compare" },
+      { id: "library", code: "F5", label: "Synthesis Library", href: "/library" },
+      { id: "sources", code: "F6", label: "Source Monitor", href: "/sources" },
+    ],
+  },
+  {
+    label: "Live",
+    items: [
+      { id: "debate", code: "F7", label: "Debate Room", href: "/debate" },
     ],
   },
   {
     label: "System",
     items: [
-      { id: "sources", code: "F11", label: "Source Monitor", href: "/sources" },
-      { id: "obs", code: "F12", label: "Observability", href: "/obs" },
-      { id: "settings", code: "·", label: "Settings", href: "/settings" },
+      { id: "settings", code: "F8", label: "Settings", href: "/settings" },
     ],
   },
 ];

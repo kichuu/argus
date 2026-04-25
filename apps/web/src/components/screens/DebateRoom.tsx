@@ -32,6 +32,7 @@ const STATUS_TONE: Record<DStatus, "amber" | "green" | "red"> = {
   planning: "amber",
   researching: "amber",
   debating: "amber",
+  criticizing: "amber",
   synthesizing: "amber",
   completed: "green",
   failed: "red",
@@ -357,8 +358,8 @@ export function DebateRoom() {
               </span>
             )}
             {isTerminal && finalClaimIds.length > 0 && (
-              <Btn primary onClick={() => router.push("/synthesis")}>
-                VIEW SYNTHESIS →
+              <Btn primary onClick={() => router.push("/library")}>
+                VIEW IN LIBRARY →
               </Btn>
             )}
           </div>

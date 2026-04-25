@@ -8,7 +8,7 @@ import { Dot } from "@/components/ui/Dot";
 import { Panel } from "@/components/ui/Panel";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
 import { Segmented } from "@/components/ui/Segmented";
-import { api, type Claim, type DiscussionRun } from "@/lib/api";
+import { api, type Claim } from "@/lib/api";
 import { ARGUS_DATA } from "@/mock/data";
 import { useDebateStore } from "@/store/debate";
 
@@ -37,7 +37,7 @@ export function HomeScreen() {
     staleTime: 30_000,
   });
 
-  const recentDiscussions = useQuery<DiscussionRun[]>({
+  const recentDiscussions = useQuery({
     queryKey: ["discussions", { limit: 5 }],
     queryFn: () => api.discussions({ limit: 5 }),
     retry: 0,
@@ -223,7 +223,7 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
           title="Recent Discussions"
           sub={
             recentDiscussions.isSuccess
-              ? `${recentDiscussions.data.length} · live`
+              ? `${recentDiscussions.data.items.length} · live`
               : recentDiscussions.isError
                 ? `${D.RECENT.length} · mock`
                 : "loading..."
@@ -231,7 +231,7 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
           style={{ flex: 2 }}
         >
           <div className="col" style={{ overflowY: "auto" }}>
-            {recentDiscussions.isSuccess && recentDiscussions.data.length > 0 ? (
+            {recentDiscussions.isSuccess && recentDiscussions.data.items.length > 0 ? (
               <table className="tbl">
                 <thead>
                   <tr>
@@ -239,12 +239,12 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
                     <th>Topic</th>
                     <th style={{ width: 90 }}>Vertical</th>
                     <th style={{ width: 90 }}>Status</th>
-                    <th style={{ width: 50 }}>Msgs</th>
+                    <th style={{ width: 60 }}>Claims</th>
                     <th style={{ width: 30 }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recentDiscussions.data.map((d) => {
+                  {recentDiscussions.data.items.map((d) => {
                     const running = !["completed", "failed"].includes(d.status);
                     const failed = d.status === "failed";
                     return (
@@ -278,7 +278,7 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
                             {d.status}
                           </span>
                         </td>
-                        <td className="tab">{d.messages_count}</td>
+                        <td className="tab">{d.final_claim_count}</td>
                         <td className="muted">→</td>
                       </tr>
                     );
@@ -301,7 +301,7 @@ Personas, world state, citation strictness will be auto-cast from this prompt."
                   {D.RECENT.map((d) => (
                     <tr
                       key={d.id}
-                      onClick={() => router.push(d.status === "running" ? "/debate" : "/synthesis")}
+                      onClick={() => router.push(d.status === "running" ? "/debate" : "/library")}
                       style={{ cursor: "pointer" }}
                     >
                       <td>

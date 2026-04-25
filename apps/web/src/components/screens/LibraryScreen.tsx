@@ -182,8 +182,7 @@ export function LibraryScreen() {
                   {mockItems.map((d) => (
                     <tr
                       key={d.id}
-                      onClick={() => router.push("/synthesis")}
-                      style={{ cursor: "pointer" }}
+                      style={{ cursor: "default" }}
                     >
                       <td style={{ color: "var(--ink-0)" }}>{d.title}</td>
                       <td className="tab muted">{d.id}</td>
@@ -218,8 +217,7 @@ export function LibraryScreen() {
                     return (
                       <tr
                         key={c.id}
-                        onClick={() => router.push("/synthesis")}
-                        style={{ cursor: "pointer" }}
+                        style={{ cursor: "default" }}
                       >
                         <td style={{ color: "var(--ink-0)", lineHeight: 1.45 }}>
                           {c.statement}

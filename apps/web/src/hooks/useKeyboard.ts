@@ -6,14 +6,10 @@ const FN_ROUTE: Record<string, string> = {
   F2: "/world",
   F3: "/kg",
   F4: "/ops",
-  F5: "/personas",
-  F6: "/debate",
-  F7: "/synthesis",
-  F8: "/library",
-  F9: "/replay",
-  F10: "/compare",
-  F11: "/sources",
-  F12: "/obs",
+  F5: "/library",
+  F6: "/sources",
+  F7: "/debate",
+  F8: "/settings",
 };
 
 type Handlers = {
