@@ -438,6 +438,189 @@ function ModeIndicator({ mode }: { mode: StreamMode }) {
   );
 }
 
+// =====================================================================
+//  OrchestrationStrip — visual flow diagram of the council pipeline.
+// =====================================================================
+
+type BoxStatus = "queued" | "thinking" | "done" | "failed";
+
+const PHASE_ORDER: DStatus[] = [
+  "planning",
+  "researching",
+  "debating",
+  "criticizing",
+  "synthesizing",
+  "completed",
+];
+
+function boxStatus(boxPhase: DStatus, current: DStatus | null): BoxStatus {
+  if (current === "failed") return "failed";
+  if (!current) return "queued";
+  if (current === "completed") return "done";
+  const ci = PHASE_ORDER.indexOf(current);
+  const bi = PHASE_ORDER.indexOf(boxPhase);
+  if (ci > bi) return "done";
+  if (ci === bi) return "thinking";
+  return "queued";
+}
+
+function FlowBox({
+  label,
+  status,
+  accent,
+  sub,
+}: {
+  label: string;
+  status: BoxStatus;
+  accent: string; // CSS var like "--p-1"
+  sub?: string;
+}) {
+  const isThinking = status === "thinking";
+  const isDone = status === "done";
+  const isFailed = status === "failed";
+  const borderColor =
+    isFailed ? "var(--red)" : isDone || isThinking ? `var(${accent})` : "var(--line-2)";
+  const textColor =
+    isFailed ? "var(--red)" : isThinking ? `var(${accent})` : isDone ? "var(--ink-0)" : "var(--ink-3)";
+  const bg =
+    isThinking ? "var(--bg-3)" : isDone ? "var(--bg-2)" : isFailed ? "var(--bg-2)" : "var(--bg-1)";
+  return (
+    <div
+      style={{
+        width: 110,
+        minHeight: 64,
+        border: `1px solid ${borderColor}`,
+        background: bg,
+        padding: "8px 10px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+        position: "relative",
+        animation: isThinking ? "pulse-soft 1.6s ease-in-out infinite" : undefined,
+        boxShadow: isThinking ? `0 0 12px var(${accent}-glow, rgba(245,165,36,0.18))` : undefined,
+        flexShrink: 0,
+      }}
+    >
+      <div
+        className="tt-up"
+        style={{ fontSize: 9, color: textColor, fontWeight: 600, letterSpacing: "0.08em" }}
+      >
+        {label}
+      </div>
+      <div className="row gap-1" style={{ alignItems: "center" }}>
+        {isThinking && <Dot tone="amber" pulse size={6} />}
+        {isDone && <Dot tone="green" size={6} />}
+        {isFailed && <Dot tone="red" pulse size={6} />}
+        {status === "queued" && <Dot tone="ink" size={6} />}
+        <span
+          className="tt-up"
+          style={{ fontSize: 9, color: "var(--ink-2)", letterSpacing: "0.08em" }}
+        >
+          {isFailed ? "failed" : status}
+        </span>
+      </div>
+      {sub && (
+        <div
+          className="tab"
+          style={{ fontSize: 10, color: "var(--ink-1)", marginTop: "auto" }}
+        >
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FlowArrow({ active }: { active: boolean }) {
+  return (
+    <div
+      style={{
+        flex: "0 0 28px",
+        height: 2,
+        background: active ? "var(--amber)" : "var(--line-2)",
+        position: "relative",
+        marginTop: 30,
+        transition: "background 0.3s ease",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          right: -4,
+          top: -6,
+          color: active ? "var(--amber)" : "var(--line-3)",
+          fontSize: 12,
+          lineHeight: 1,
+          fontFamily: "monospace",
+        }}
+      >
+        ▸
+      </span>
+    </div>
+  );
+}
+
+function OrchestrationStrip({
+  phase,
+  messages,
+  agentStatuses,
+}: {
+  phase: DStatus | null;
+  messages: AgentMessage[];
+  agentStatuses: Record<string, { state: string; extra: Record<string, unknown> }>;
+}) {
+  const personaTotal = useMemo(() => {
+    const fromMaster = (agentStatuses["master"]?.extra?.["n_personas"] as number | undefined) ?? 0;
+    if (fromMaster) return fromMaster;
+    return new Set(messages.filter((m) => m.role === "persona").map((m) => m.persona_id ?? m.agent_id)).size;
+  }, [messages, agentStatuses]);
+  const personaDone = useMemo(
+    () => new Set(messages.filter((m) => m.role === "persona").map((m) => m.persona_id ?? m.agent_id)).size,
+    [messages],
+  );
+  const research = boxStatus("researching", phase);
+  const master = boxStatus("planning", phase);
+  const personas = boxStatus("debating", phase);
+  const critic = boxStatus("criticizing", phase);
+  const synth = boxStatus("synthesizing", phase);
+  const completed = phase === "completed";
+
+  return (
+    <div
+      style={{
+        padding: "12px 14px",
+        borderBottom: "1px solid var(--line-2)",
+        background: "var(--bg-1)",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 0,
+        overflowX: "auto",
+        flexShrink: 0,
+      }}
+    >
+      <FlowBox label="RESEARCH" status={research} accent="--p-2" sub="evidence pack" />
+      <FlowArrow active={research === "done"} />
+      <FlowBox label="MASTER" status={master} accent="--p-1" sub={personaTotal > 0 ? `${personaTotal} personas` : undefined} />
+      <FlowArrow active={master === "done"} />
+      <FlowBox
+        label="PERSONAS"
+        status={personas}
+        accent="--p-4"
+        sub={personaTotal > 0 ? `${personaDone}/${personaTotal} done` : "—"}
+      />
+      <FlowArrow active={personas === "done"} />
+      <FlowBox label="CRITIC" status={critic} accent="--p-5" sub="audit citations" />
+      <FlowArrow active={critic === "done"} />
+      <FlowBox
+        label="SYNTH"
+        status={synth}
+        accent="--p-3"
+        sub={completed ? "claims emitted" : "structured claims"}
+      />
+    </div>
+  );
+}
+
 function CenterView({
   transcriptRef,
   discussionId,
@@ -488,6 +671,13 @@ function CenterView({
 
   return (
     <div className="col grow" style={{ overflow: "hidden" }}>
+      {discussionId && (
+        <OrchestrationStrip
+          phase={stream.phase}
+          messages={messageList}
+          agentStatuses={stream.agentStatuses}
+        />
+      )}
       <div
         className="row"
         style={{
